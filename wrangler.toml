@@ -6,13 +6,14 @@ compatibility_date = "2024-01-01"
 [vars]
 JWT_SECRET = "dev_secret_key_123"
 
-# D1 数据库配置
+# D1 数据库配置（远程数据库）
 [[ d1_databases ]]
-binding = "DB"
+binding = "lingshu_db"
 database_name = "lingshu-db"
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" # 需要替换为实际的数据库ID
+database_id = "9d8a7c70-f0f7-4ea8-89cc-384f9db4b3d3"
 
-# 本地开发时使用模拟数据库
+# 开发环境配置 - 直连远程数据库
 [dev]
 ip = "localhost"
 port = 8787
+remote = true
