@@ -41,4 +41,5 @@ export interface JwtPayload {
   memberLevel: number;
   iat?: number;
   exp?: number;
+  [key: string]: any; // 添加索引签名以兼容 Hono JWT
 }

@@ -1,86 +1,48 @@
-/// <reference types="@cloudflare/workers-types" />
-
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { jwt } from 'hono/jwt'
+import { drizzle } from 'drizzle-orm/d1'
+import { eq } from 'drizzle-orm'
+import { users, cases } from './schema'
 import { authRouter } from './auth'
-import { memberRouter } from './member/quota'
-import { referralRouter } from './member/referral'
-import { divinationRouter } from './divination/quota-check'
 
-// 定义 CloudflareBindings 接口
-interface CloudflareBindings {
+// 定义环境类型
+type Bindings = {
   lingshu_db: D1Database
   JWT_SECRET: string
 }
 
-// 使此文件成为模块
-export {}
+const app = new Hono<{ Bindings: Bindings }>()
 
-const app = new Hono<{ Bindings: CloudflareBindings }>()
-
-// ========== 全局中间件 ==========
-
-// 1. 跨域支持
+// 1. 开启跨域 (允许你的 React 前端访问)
 app.use('/*', cors())
 
-// 2. JWT 认证中间件（仅保护 /api/* 路由）
-app.use('/api/*', async (c, next) => {
+// 2. 挂载认证路由
+app.route('/auth', authRouter)
+
+// 3. JWT 中间件 (为 /api/* 路由保护)
+app.use('/api/*', (c, next) => {
   const secret = c.env.JWT_SECRET || 'dev_secret_key_123'
-  const jwtMiddleware = jwt({
-    secret,
-    alg: 'HS256'
-  })
+  const jwtMiddleware = jwt({ secret, alg: 'HS256' })
   return jwtMiddleware(c, next)
 })
 
-// ========== 路由注册 ==========
+// 4. VIP 专属高级断语接口 (测试鉴权用)
+app.get('/api/pro/interpretation', (c) => {
+  const payload = c.get('jwtPayload') // 从 Token 里解出来的用户信息
+  
+  const isVip = payload.memberExpireAt > Date.now()
+  
+  if (!isVip) {
+    return c.json({ 
+      isVip: false, 
+      data: "基础断语：此卦为吉..." // 普通用户看这个
+    })
+  }
 
-// 认证路由（/auth/login, /auth/bind-phone）
-app.route('/auth', authRouter)
-
-// 会员与配额路由（/api/member/*)
-app.route('/api/member', memberRouter)
-
-// 分享奖励路由（/api/referral/*)
-app.route('/api/referral', referralRouter)
-
-// 排卦业务路由（/api/divination/*)
-app.route('/api/divination', divinationRouter)
-
-// ========== 健康检查端点 ==========
-app.get('/health', (c) => {
-  return c.json({
-    code: 200,
-    message: '服务正常运行',
-    timestamp: Date.now()
-  })
-})
-
-// ========== 根路径 ==========
-app.get('/', (c) => {
-  return c.json({
-    code: 200,
-    message: '灵枢 App 后端 API',
-    version: '1.0.0',
-    endpoints: {
-      auth: [
-        'POST /auth/login',
-        'POST /auth/bind-phone'
-      ],
-      member: [
-        'POST /api/member/exchange',
-        'GET /api/member/status'
-      ],
-      referral: [
-        'GET /api/referral/rewards'
-      ],
-      divination: [
-        'POST /api/divination/check-quota',
-        'POST /api/divination/divine',
-        'GET /api/divination/history'
-      ]
-    }
+  return c.json({ 
+    isVip: true,
+    data: "【VIP机密】高级断语：官鬼持世，动而化进，旺上加旺..." // VIP 看这个
   })
 })
 
