@@ -21,8 +21,9 @@ export const memberRouter = new Hono<{ Bindings: CloudflareBindings }>();
  * 灵石兑换价格表
  */
 const EXCHANGE_RATES = {
-  weekly: 700, // 700 灵石 = 7 天会员
-  monthly: 3000, // 3000 灵石 = 30 天会员
+  weekly: 3000, // 3000 灵石 = 7 天会员
+  monthly: 20000, // 20000 灵石 = 30 天会员
+  ticket: 50, // 50 灵石 = 单次使用券
   // 年会员不可兑换，仅通过支付或活动获取
 };
 
@@ -178,7 +179,7 @@ export async function deductQuota(db: any, userId: number) {
 /**
  * POST /api/member/exchange
  * 灵石兑换会员或次数
- * 请求体：{ type: 'weekly' | 'monthly' }
+ * 请求体：{ type: 'weekly' | 'monthly' | 'ticket' }
  */
 memberRouter.post('/exchange', async (c) => {
   const db = drizzle(c.env.lingshu_db);
@@ -194,7 +195,7 @@ memberRouter.post('/exchange', async (c) => {
   const body = await c.req.json().catch(() => null);
   if (!body || !body.type) {
     return c.json(
-      errorResponse('缺少必要参数：type (weekly|monthly)'),
+      errorResponse('缺少必要参数：type (weekly|monthly|ticket)'),
       400
     );
   }
@@ -205,7 +206,7 @@ memberRouter.post('/exchange', async (c) => {
   // 验证 type 是否有效
   if (!EXCHANGE_RATES.hasOwnProperty(type)) {
     return c.json(
-      errorResponse('不支持的兑换类型，仅支持: weekly, monthly'),
+      errorResponse('不支持的兑换类型，仅支持: weekly, monthly, ticket'),
       400
     );
   }
@@ -236,13 +237,38 @@ memberRouter.post('/exchange', async (c) => {
       );
     }
 
+    const now = Date.now();
+
+    if (type === 'ticket') {
+      // 兑换单次使用券：扣减灵石 + 增加 bonusQuota
+      await db
+        .update(users)
+        .set({
+          lingshi: user.lingshi - requiredLingshi,
+          bonusQuota: user.bonusQuota + 1,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      return c.json(
+        successResponse(
+          {
+            type,
+            lingshiDeducted: requiredLingshi,
+            newLingshi: user.lingshi - requiredLingshi,
+            bonusQuota: user.bonusQuota + 1,
+          },
+          '成功兑换单次使用券'
+        )
+      );
+    }
+
     // 计算会员有效期（堆叠逻辑：max(当前时间, 现有过期时间) + 天数）
     let daysToAdd = 7; // 默认周会员 7 天
     if (type === 'monthly') {
       daysToAdd = 30;
     }
 
-    const now = Date.now();
     const currentExpireAt = user.memberExpireAt || 0;
     const baseTime = Math.max(now, currentExpireAt);
     const newExpireAt = baseTime + daysToAdd * 24 * 60 * 60 * 1000;

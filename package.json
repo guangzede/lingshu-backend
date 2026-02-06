@@ -2,9 +2,9 @@
   "name": "my-backend",
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local",
-    "dev:remote": "wrangler dev --remote",
-    "dev:local": "wrangler dev --local",
+    "dev": "HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --ip 127.0.0.1 --inspector-ip 127.0.0.1",
+    "dev:remote": "HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --remote --ip 127.0.0.1 --inspector-ip 127.0.0.1",
+    "dev:local": "HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --local --ip 127.0.0.1 --inspector-ip 127.0.0.1",
     "deployminify": "wrangler deploy --minify",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"

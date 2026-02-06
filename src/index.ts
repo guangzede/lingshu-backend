@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/d1'
 import { eq } from 'drizzle-orm'
 import { users, cases } from './schema'
 import { authRouter } from './auth'
+import { memberRouter } from './member/quota'
 
 // 定义环境类型
 type Bindings = {
@@ -17,8 +18,14 @@ const app = new Hono<{ Bindings: Bindings }>()
 // 1. 开启跨域 (允许你的 React 前端访问)
 app.use('/*', cors())
 
+// 健康检查接口
+app.get('/health', (c) => c.json({ ok: true, status: 'healthy' }))
+
 // 2. 挂载认证路由
 app.route('/auth', authRouter)
+
+// 会员与配额相关路由
+app.route('/api/member', memberRouter)
 
 // 3. JWT 中间件 (为 /api/* 路由保护)
 app.use('/api/*', (c, next) => {
