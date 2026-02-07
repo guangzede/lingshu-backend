@@ -2,10 +2,11 @@
   "name": "my-backend",
   "type": "module",
   "scripts": {
-    "dev": "HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --ip 127.0.0.1 --inspector-ip 127.0.0.1",
-    "dev:remote": "HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --remote --ip 127.0.0.1 --inspector-ip 127.0.0.1",
-    "dev:local": "HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --local --ip 127.0.0.1 --inspector-ip 127.0.0.1",
+    "dev": "cross-env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --ip 127.0.0.1 --inspector-ip 127.0.0.1",
+    "dev:remote": "cross-env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --remote --ip 127.0.0.1 --inspector-ip 127.0.0.1",
+    "dev:local": "cross-env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --local --ip 127.0.0.1 --inspector-ip 127.0.0.1",
     "deployminify": "wrangler deploy --minify",
+    "start": "npm run dev",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
@@ -15,7 +16,8 @@
     "hono": "^4.11.7"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.8",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.63.0"
   }
 }

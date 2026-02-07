@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { users, cases } from './schema'
 import { authRouter } from './auth'
 import { memberRouter } from './member/quota'
+import { datetime } from 'drizzle-orm/mysql-core'
 
 // 定义环境类型
 type Bindings = {
@@ -19,7 +20,7 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/*', cors())
 
 // 健康检查接口
-app.get('/health', (c) => c.json({ ok: true, status: 'healthy' }))
+app.get('/health', (c) => c.json({ ok: true, status: 'healthy', timestamp: new Date() }))
 
 // 2. 挂载认证路由
 app.route('/auth', authRouter)
