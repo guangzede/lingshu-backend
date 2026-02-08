@@ -18,12 +18,20 @@ export const users = sqliteTable('users', {
   // 会员等级
   memberLevel: integer('member_level').default(0), // 0=非会员，1=会员
   memberExpireAt: integer('member_expire_at').default(0), // 会员过期时间戳，0表示永不过期或未激活
+  memberPurchasedAt: integer('member_purchased_at').default(0), // 购卡时间戳
   
   // VIP 兼容字段（保留用于迁移）
   vipExpire: integer('vip_expire').default(0), // VIP到期时间戳，默认0（逐步废弃，使用memberExpireAt替代）
   
   // 推荐系统
   referrerId: integer('referrer_id'), // 推荐人ID（可选）
+  inviteCode: text('invite_code').unique(), // 邀请码（唯一）
+
+  // 资料完善
+  nickname: text('nickname'), // 称呼
+  gender: text('gender'), // 性别
+  birthday: text('birthday'), // 生日 YYYY-MM-DD
+  profileCompletedAt: integer('profile_completed_at').default(0), // 完成资料时间戳
   
   // 风控字段
   deviceId: text('device_id'), // 设备指纹，注册时记录初次设备标识

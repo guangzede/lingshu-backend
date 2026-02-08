@@ -22,13 +22,7 @@ app.use('/*', cors())
 // 健康检查接口
 app.get('/api/health', (c) => c.json({ ok: true, status: 'healthy', timestamp: new Date() }))
 
-// 2. 挂载认证路由
-app.route('/api/auth', authRouter)
-
-// 会员与配额相关路由
-app.route('/api/member', memberRouter)
-
-// 3. JWT 中间件 (为 /api/* 路由保护)
+// 2. JWT 中间件 (为 /api/* 路由保护)
 app.use('/api/*', (c, next) => {
   const path = c.req.path
   if (path.startsWith('/api/auth') || path === '/api/health') {
@@ -38,6 +32,12 @@ app.use('/api/*', (c, next) => {
   const jwtMiddleware = jwt({ secret, alg: 'HS256' })
   return jwtMiddleware(c, next)
 })
+
+// 3. 挂载认证路由
+app.route('/api/auth', authRouter)
+
+// 会员与配额相关路由
+app.route('/api/member', memberRouter)
 
 // 4. VIP 专属高级断语接口 (测试鉴权用)
 app.get('/api/pro/interpretation', (c) => {

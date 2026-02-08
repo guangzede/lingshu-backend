@@ -7,7 +7,7 @@ import { Hono } from 'hono';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
 import { eq, and, gt, gte } from 'drizzle-orm';
 import { users } from '../schema';
-import { successResponse, errorResponse, getTodayDate, isNewDay } from '../utils/response';
+import { successResponse, errorResponse, getTodayDate, isNewDay, maskPhone } from '../utils/response';
 import { JwtPayload } from '../utils/types';
 
 interface CloudflareBindings {
@@ -280,6 +280,7 @@ memberRouter.post('/exchange', async (c) => {
         lingshi: user.lingshi - requiredLingshi,
         memberLevel: 1,
         memberExpireAt: newExpireAt,
+        memberPurchasedAt: now,
         updatedAt: now,
       })
       .where(eq(users.id, userId));
@@ -335,11 +336,36 @@ memberRouter.get('/status', async (c) => {
     }
 
     const quotaStatus = await checkQuotaStatus(db, payload.id);
+    const invitees = await db
+      .select()
+      .from(users)
+      .where(eq(users.referrerId, payload.id))
+      .all();
+    const invitedCount = invitees.length;
 
     return c.json(
       successResponse({
+        user: {
+          id: user.id,
+          username: user.username,
+          phone: maskPhone(user.phone),
+          inviteCode: user.inviteCode,
+          nickname: user.nickname,
+          gender: user.gender,
+          birthday: user.birthday,
+          memberPurchasedAt: user.memberPurchasedAt,
+          profileCompletedAt: user.profileCompletedAt,
+          invitedCount,
+          memberLevel: user.memberLevel,
+          memberExpireAt: user.memberExpireAt,
+          lingshi: user.lingshi,
+          dailyFreeQuota: user.dailyFreeQuota,
+          bonusQuota: user.bonusQuota,
+        },
+        invitedCount,
         memberLevel: user.memberLevel,
         memberExpireAt: user.memberExpireAt,
+        memberPurchasedAt: user.memberPurchasedAt,
         isMember: user.memberLevel === 1 && user.memberExpireAt > Date.now(),
         dailyFreeQuota: user.dailyFreeQuota,
         bonusQuota: user.bonusQuota,
@@ -353,6 +379,128 @@ memberRouter.get('/status', async (c) => {
     console.error('[MEMBER STATUS ERROR]', error);
     return c.json(
       errorResponse('查询失败，请稍后重试'),
+      500
+    );
+  }
+});
+
+/**
+ * POST /api/member/profile
+ * 完善用户资料（nickname, gender, birthday, phone）
+ * 首次完善奖励 500 灵石
+ */
+memberRouter.post('/profile', async (c) => {
+  const db = drizzle(c.env.lingshu_db);
+  const payload = c.get('jwtPayload') as JwtPayload | undefined;
+
+  if (!payload || !payload.id) {
+    return c.json(
+      errorResponse('未授权：请先登录'),
+      401
+    );
+  }
+
+  let body;
+  try {
+    body = await c.req.json().catch(() => null);
+  } catch (parseError: any) {
+    console.error('[MEMBER PROFILE] JSON 解析失败:', parseError);
+    return c.json(
+      errorResponse('请求体格式错误'),
+      400
+    );
+  }
+
+  if (!body) {
+    return c.json(
+      errorResponse('缺少请求体'),
+      400
+    );
+  }
+
+  const { nickname, gender, birthday, phone } = body;
+  const userId = payload.id;
+
+  try {
+    const user = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .get();
+
+    if (!user) {
+      return c.json(
+        errorResponse('用户不存在'),
+        404
+      );
+    }
+
+    if (phone && phone !== user.phone) {
+      const phoneOwner = await db
+        .select()
+        .from(users)
+        .where(eq(users.phone, phone))
+        .get();
+      if (phoneOwner && phoneOwner.id !== userId) {
+        return c.json(
+          errorResponse('该手机号已被使用'),
+          400
+        );
+      }
+    }
+
+    const now = Date.now();
+    const nextNickname = nickname ?? user.nickname;
+    const nextGender = gender ?? user.gender;
+    const nextBirthday = birthday ?? user.birthday;
+
+    const completingNow =
+      !user.profileCompletedAt &&
+      !!nextNickname &&
+      !!nextGender &&
+      !!nextBirthday;
+
+    const bonusAwarded = completingNow ? 500 : 0;
+    const nextLingshi = user.lingshi + bonusAwarded;
+
+    await db
+      .update(users)
+      .set({
+        nickname: nextNickname,
+        gender: nextGender,
+        birthday: nextBirthday,
+        phone: phone ?? user.phone,
+        profileCompletedAt: completingNow ? now : user.profileCompletedAt,
+        lingshi: nextLingshi,
+        updatedAt: now,
+      })
+      .where(eq(users.id, userId));
+
+    return c.json(
+      successResponse({
+        user: {
+          id: user.id,
+          username: user.username,
+          phone: maskPhone(phone ?? user.phone),
+          inviteCode: user.inviteCode,
+          nickname: nextNickname,
+          gender: nextGender,
+          birthday: nextBirthday,
+          memberPurchasedAt: user.memberPurchasedAt,
+          profileCompletedAt: completingNow ? now : user.profileCompletedAt,
+          memberLevel: user.memberLevel,
+          memberExpireAt: user.memberExpireAt,
+          lingshi: nextLingshi,
+          dailyFreeQuota: user.dailyFreeQuota,
+          bonusQuota: user.bonusQuota,
+        },
+        bonusAwarded,
+      }, completingNow ? '资料完善奖励已发放' : '资料更新成功')
+    );
+  } catch (error: any) {
+    console.error('[MEMBER PROFILE ERROR]', error);
+    return c.json(
+      errorResponse('更新失败，请稍后重试'),
       500
     );
   }

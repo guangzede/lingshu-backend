@@ -10,7 +10,10 @@
 			"database_id": "9d8a7c70-f0f7-4ea8-89cc-384f9db4b3d3",
 			"remote": true
 		}
-	]
+	],
+	"vars": {
+		"JWT_SECRET": "dev_secret_key_123"
+	}
 	// "compatibility_flags": [
 	//   "nodejs_compat"
 	// ],

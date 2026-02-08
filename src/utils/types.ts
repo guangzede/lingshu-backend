@@ -24,6 +24,11 @@ export interface UserInfo {
   id: number;
   username: string;
   phone: string; // 隐敏处理：189****1234
+  nickname?: string;
+  gender?: string;
+  birthday?: string;
+  memberPurchasedAt?: number;
+  profileCompletedAt?: number;
   memberLevel: number;
   memberExpireAt: number;
   dailyFreeQuota: number;

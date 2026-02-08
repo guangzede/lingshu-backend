@@ -21,6 +21,31 @@ interface CloudflareBindings {
 
 export const authRouter = new Hono<{ Bindings: CloudflareBindings }>();
 
+const INVITE_CODE_LENGTH = 8;
+const INVITE_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+function generateInviteCode() {
+  let code = '';
+  for (let i = 0; i < INVITE_CODE_LENGTH; i += 1) {
+    const idx = Math.floor(Math.random() * INVITE_CODE_ALPHABET.length);
+    code += INVITE_CODE_ALPHABET[idx];
+  }
+  return code;
+}
+
+async function generateUniqueInviteCode(db: ReturnType<typeof drizzle>) {
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const code = generateInviteCode();
+    const existing = await db
+      .select()
+      .from(users)
+      .where(eq(users.inviteCode, code))
+      .get();
+    if (!existing) return code;
+  }
+  throw new Error('邀请码生成失败');
+}
+
 /**
  * POST /api/auth/register
  * 用户注册
@@ -48,7 +73,7 @@ authRouter.post('/register', async (c) => {
     );
   }
 
-  const { username, password, phone, referrerId, deviceId } = body;
+  const { username, password, phone, referrerId, deviceId, inviteCode } = body;
 
   try {
     console.log('[AUTH REGISTER] 开始注册:', { username, phone });
@@ -101,10 +126,28 @@ authRouter.post('/register', async (c) => {
       );
     }
 
+    // 如果提供邀请码，校验并绑定推荐人
+    let resolvedReferrerId = referrerId || undefined;
+    if (inviteCode) {
+      const referrer = await db
+        .select()
+        .from(users)
+        .where(eq(users.inviteCode, inviteCode))
+        .get();
+      if (!referrer) {
+        return c.json(
+          errorResponse('邀请码无效'),
+          400
+        );
+      }
+      resolvedReferrerId = referrer.id;
+    }
+
     // 创建新用户
     const hashedPassword = hashSync(password, 10);
     const now = Date.now();
     const today = getTodayDate();
+    const generatedInviteCode = await generateUniqueInviteCode(db);
 
     try {
       const result = await db
@@ -119,7 +162,8 @@ authRouter.post('/register', async (c) => {
           lingshi: 0,
           memberLevel: 0,
           memberExpireAt: 0,
-          referrerId: referrerId || undefined,
+          referrerId: resolvedReferrerId,
+          inviteCode: generatedInviteCode,
           deviceId: deviceId || undefined,
           createdAt: now,
           updatedAt: now,
@@ -137,13 +181,37 @@ authRouter.post('/register', async (c) => {
       const newUser = result[0];
       console.log('[AUTH REGISTER] 用户注册成功:', { userId: newUser.id, username, createdAt: now });
 
+      let token;
+      try {
+        const secret = c.env.JWT_SECRET || 'dev_secret_key_123';
+        const payload: JwtPayload = {
+          id: newUser.id,
+          username: newUser.username,
+          memberLevel: newUser.memberLevel || 0,
+        };
+        token = await sign(payload, secret, 'HS256');
+      } catch (tokenError: any) {
+        console.error('[AUTH REGISTER] Token 生成失败:', tokenError);
+        return c.json(
+          errorResponse('Token 生成失败，请稍后重试'),
+          500
+        );
+      }
+
       return c.json(
         successResponse(
           {
+            token,
             user: {
               id: newUser.id,
               username: newUser.username,
               phone: maskPhone(newUser.phone),
+              inviteCode: newUser.inviteCode,
+              nickname: newUser.nickname,
+              gender: newUser.gender,
+              birthday: newUser.birthday,
+              memberPurchasedAt: newUser.memberPurchasedAt,
+              profileCompletedAt: newUser.profileCompletedAt,
               memberLevel: newUser.memberLevel,
               memberExpireAt: newUser.memberExpireAt,
               lingshi: newUser.lingshi,
@@ -277,6 +345,12 @@ authRouter.post('/login', async (c) => {
             id: user.id,
             username: user.username,
             phone: maskPhone(user.phone),
+            inviteCode: user.inviteCode,
+            nickname: user.nickname,
+            gender: user.gender,
+            birthday: user.birthday,
+            memberPurchasedAt: user.memberPurchasedAt,
+            profileCompletedAt: user.profileCompletedAt,
             memberLevel: user.memberLevel,
             memberExpireAt: user.memberExpireAt,
             lingshi: user.lingshi,
