@@ -1,8 +1,8 @@
 /**
  * 认证模块：分离注册和登录
- * - POST /auth/register: 用户注册（username, password, phone）
- * - POST /auth/login: 用户登录（username, password）
- * - POST /auth/bind-phone: 绑定手机号
+ * - POST /api/auth/register: 用户注册（username, password, phone）
+ * - POST /api/auth/login: 用户登录（username, password）
+ * - POST /api/auth/bind-phone: 绑定手机号
  */
 
 import { Hono } from 'hono';
@@ -22,7 +22,7 @@ interface CloudflareBindings {
 export const authRouter = new Hono<{ Bindings: CloudflareBindings }>();
 
 /**
- * POST /auth/register
+ * POST /api/auth/register
  * 用户注册
  * 参数：username, password, phone, referrerId(可选), deviceId(可选)
  * 返回：user 信息
@@ -182,7 +182,7 @@ authRouter.post('/register', async (c) => {
 });
 
 /**
- * POST /auth/login
+ * POST /api/auth/login
  * 用户登录（仅需要 username 和 password）
  * 参数：username, password
  * 返回：token 和 user 信息
@@ -301,7 +301,7 @@ authRouter.post('/login', async (c) => {
 });
 
 /**
- * POST /auth/bind-phone
+ * POST /api/auth/bind-phone
  * 绑定手机号到现有账户
  * 需要 JWT Token 认证
  */

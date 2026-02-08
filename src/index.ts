@@ -20,16 +20,20 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/*', cors())
 
 // 健康检查接口
-app.get('/health', (c) => c.json({ ok: true, status: 'healthy', timestamp: new Date() }))
+app.get('/api/health', (c) => c.json({ ok: true, status: 'healthy', timestamp: new Date() }))
 
 // 2. 挂载认证路由
-app.route('/auth', authRouter)
+app.route('/api/auth', authRouter)
 
 // 会员与配额相关路由
 app.route('/api/member', memberRouter)
 
 // 3. JWT 中间件 (为 /api/* 路由保护)
 app.use('/api/*', (c, next) => {
+  const path = c.req.path
+  if (path.startsWith('/api/auth') || path === '/api/health') {
+    return next()
+  }
   const secret = c.env.JWT_SECRET || 'dev_secret_key_123'
   const jwtMiddleware = jwt({ secret, alg: 'HS256' })
   return jwtMiddleware(c, next)
