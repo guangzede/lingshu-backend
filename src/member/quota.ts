@@ -228,10 +228,10 @@ memberRouter.post('/exchange', async (c) => {
     const requiredLingshi = EXCHANGE_RATES[type as keyof typeof EXCHANGE_RATES];
 
     // 检查灵石是否足够
-    if (user.lingshi < requiredLingshi) {
+    if ((user.lingshi ?? 0) < requiredLingshi) {
       return c.json(
         errorResponse(
-          `灵石不足，需要 ${requiredLingshi} 灵石，当前 ${user.lingshi} 灵石`
+          `灵石不足，需要 ${requiredLingshi} 灵石，当前 ${user.lingshi ?? 0} 灵石`
         ),
         400
       );
@@ -244,8 +244,8 @@ memberRouter.post('/exchange', async (c) => {
       await db
         .update(users)
         .set({
-          lingshi: user.lingshi - requiredLingshi,
-          bonusQuota: user.bonusQuota + 1,
+          lingshi: (user.lingshi ?? 0) - requiredLingshi,
+          bonusQuota: (user.bonusQuota ?? 0) + 1,
           updatedAt: now,
         })
         .where(eq(users.id, userId));
@@ -255,8 +255,8 @@ memberRouter.post('/exchange', async (c) => {
           {
             type,
             lingshiDeducted: requiredLingshi,
-            newLingshi: user.lingshi - requiredLingshi,
-            bonusQuota: user.bonusQuota + 1,
+            newLingshi: (user.lingshi ?? 0) - requiredLingshi,
+            bonusQuota: (user.bonusQuota ?? 0) + 1,
           },
           '成功兑换单次使用券'
         )
@@ -277,7 +277,7 @@ memberRouter.post('/exchange', async (c) => {
     await db
       .update(users)
       .set({
-        lingshi: user.lingshi - requiredLingshi,
+        lingshi: (user.lingshi ?? 0) - requiredLingshi,
         memberLevel: 1,
         memberExpireAt: newExpireAt,
         memberPurchasedAt: now,
@@ -290,7 +290,7 @@ memberRouter.post('/exchange', async (c) => {
         {
           type,
           lingshiDeducted: requiredLingshi,
-          newLingshi: user.lingshi - requiredLingshi,
+          newLingshi: (user.lingshi ?? 0) - requiredLingshi,
           memberExpireAt: newExpireAt,
           daysAdded: daysToAdd,
         },
@@ -366,7 +366,7 @@ memberRouter.get('/status', async (c) => {
         memberLevel: user.memberLevel,
         memberExpireAt: user.memberExpireAt,
         memberPurchasedAt: user.memberPurchasedAt,
-        isMember: user.memberLevel === 1 && user.memberExpireAt > Date.now(),
+        isMember: user.memberLevel === 1 && user.memberExpireAt !== null && user.memberExpireAt > Date.now(),
         dailyFreeQuota: user.dailyFreeQuota,
         bonusQuota: user.bonusQuota,
         lingshi: user.lingshi,
@@ -461,7 +461,7 @@ memberRouter.post('/profile', async (c) => {
       !!nextBirthday;
 
     const bonusAwarded = completingNow ? 500 : 0;
-    const nextLingshi = user.lingshi + bonusAwarded;
+    const nextLingshi = (user.lingshi ?? 0) + bonusAwarded;
 
     await db
       .update(users)
