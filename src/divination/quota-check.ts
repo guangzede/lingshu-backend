@@ -8,6 +8,9 @@ import { drizzle } from 'drizzle-orm/d1';
 import { eq, and, gt } from 'drizzle-orm';
 import { users, divinationRecords } from '../schema';
 import { successResponse, errorResponse } from '../utils/response';
+import { computeAll } from '@/services/liuyao';
+import { analyzeBranchRelation } from '@/services/ganzhi/branch';
+import { analyzeYaoInteractions } from '@/services/ganzhi/wuxing';
 import { JwtPayload, QuotaCheckResult } from '../utils/types';
 import { checkQuotaStatus, deductQuota } from '../member/quota';
 
@@ -17,6 +20,312 @@ interface CloudflareBindings {
 }
 
 export const divinationRouter = new Hono<{ Bindings: CloudflareBindings }>();
+
+const YAO_LABELS: Record<number, string> = {
+  0: '上爻',
+  1: '五爻',
+  2: '四爻',
+  3: '三爻',
+  4: '二爻',
+  5: '初爻'
+};
+
+const BRANCH_WUXING: Record<string, string> = {
+  '子': '水', '丑': '土', '寅': '木', '卯': '木', '辰': '土', '巳': '火',
+  '午': '火', '未': '土', '申': '金', '酉': '金', '戌': '土', '亥': '水'
+};
+
+const BRANCH_HARMONY: Record<string, string> = {
+  '子': '丑', '丑': '子', '寅': '亥', '亥': '寅', '卯': '戌', '戌': '卯',
+  '辰': '酉', '酉': '辰', '巳': '申', '申': '巳', '午': '未', '未': '午'
+};
+
+const BRANCH_CLASH: Record<string, string> = {
+  '子': '午', '午': '子', '丑': '未', '未': '丑', '寅': '申', '申': '寅',
+  '卯': '酉', '酉': '卯', '辰': '戌', '戌': '辰', '巳': '亥', '亥': '巳'
+};
+
+const GENERATES: Record<string, string> = {
+  '木': '火', '火': '土', '土': '金', '金': '水', '水': '木'
+};
+
+const OVERCOMES: Record<string, string> = {
+  '木': '土', '土': '水', '水': '火', '火': '金', '金': '木'
+};
+
+const WUXING_CLASS: Record<string, string> = {
+  '金': 'wuxing-metal',
+  '木': 'wuxing-wood',
+  '水': 'wuxing-water',
+  '火': 'wuxing-fire',
+  '土': 'wuxing-earth'
+};
+
+const STRENGTH_CLASS: Record<string, string> = {
+  '旺': 'strength-wang',
+  '相': 'strength-xiang',
+  '休': 'strength-xiu',
+  '囚': 'strength-qiu',
+  '死': 'strength-si'
+};
+
+function buildInfoGrid(result: any, dateValue: string, timeValue: string) {
+  const dateText = `${dateValue || ''} ${timeValue || ''}`.trim();
+  const lunarText = `农历 ${result.lunar.month}月${result.lunar.day}日${result.lunar.jieQi ? `（${result.lunar.jieQi}）` : ''}`;
+  const shenSha = result.shenSha || {};
+  const formatVal = (val: any) => Array.isArray(val) ? val.join('、') : (val || '--');
+  return {
+    dateText,
+    lunarText,
+    ganzhi: {
+      year: `${result.timeGanZhi.year.stem}${result.timeGanZhi.year.branch}`,
+      month: `${result.timeGanZhi.month.stem}${result.timeGanZhi.month.branch}`,
+      day: `${result.timeGanZhi.day.stem}${result.timeGanZhi.day.branch}`,
+      hour: `${result.timeGanZhi.hour.stem}${result.timeGanZhi.hour.branch}`
+    },
+    xunKongText: `${result.xunKong?.[0] || ''}${result.xunKong?.[1] || ''}`,
+    shenShaItems: [
+      { label: '天乙贵人', value: formatVal(shenSha.天乙贵人) },
+      { label: '驿马', value: formatVal(shenSha.驿马) },
+      { label: '禄神', value: formatVal(shenSha.禄神), highlight: 'jade' },
+      { label: '文昌', value: formatVal(shenSha.文昌贵人) },
+      { label: '将星', value: formatVal(shenSha.将星) },
+      { label: '华盖', value: formatVal(shenSha.华盖) },
+      { label: '天医', value: formatVal(shenSha.天医), highlight: 'jade' },
+      { label: '孤辰', value: formatVal(shenSha.孤辰) },
+      { label: '寡宿', value: formatVal(shenSha.寡宿) },
+      { label: '桃花', value: formatVal(shenSha.桃花), highlight: 'red' },
+      { label: '咸池', value: formatVal(shenSha.咸池), highlight: 'red' }
+    ]
+  };
+}
+
+function getYaoState(yao: any) {
+  const isYang = yao?.isYang !== undefined ? yao.isYang : true;
+  const isMoving = yao?.isMoving || false;
+  let cls = isYang ? 'yang' : 'yin';
+  if (isMoving) cls += ' moving';
+  return cls;
+}
+
+function buildHexagramTable(result: any) {
+  const baseHex = result.hex || {};
+  const variantHex = result.variant || {};
+  const base = result.yaos || [];
+  const variant = result.variantYaos || result.variant?.yaos || [];
+  const rows = [0, 1, 2, 3, 4, 5].map((i) => {
+    const y = base[i] || {};
+    const v = variant[i] || {};
+    return {
+      index: i,
+      left: {
+        sixGod: y.sixGod || '--',
+        fuShen: y.fuShen ? `${y.fuShen.relation || ''}${y.fuShen.stem || ''}${y.fuShen.branch || ''}` : '',
+        relation: `${y.relation || '--'}${y.stem || ''}${y.branch || ''}`,
+        yaoClass: getYaoState(y),
+        fiveElement: y.fiveElement || '--',
+        shiYing: baseHex.shiIndex === i ? '世' : baseHex.yingIndex === i ? '应' : ''
+      },
+      right: {
+        relation: `${v.relation || '--'}${v.stem || ''}${v.branch || ''}`,
+        yaoClass: getYaoState(v),
+        fiveElement: v.fiveElement || '--',
+        shiYing: variantHex.shiIndex === i ? '世' : variantHex.yingIndex === i ? '应' : ''
+      }
+    };
+  });
+
+  return {
+    baseHeader: {
+      name: baseHex?.name || '本卦',
+      palace: baseHex?.palace || '',
+      palaceCategory: baseHex?.palaceCategory || ''
+    },
+    variantHeader: {
+      name: variantHex?.name || '变卦',
+      palace: variantHex?.palace || '',
+      palaceCategory: variantHex?.palaceCategory || ''
+    },
+    rows
+  };
+}
+
+function formatRelation(rel: { isHarmony: boolean; isClash: boolean; isTriple: boolean; isPunish: boolean }) {
+  const relations: string[] = [];
+  if (rel.isClash) relations.push('六冲');
+  if (rel.isHarmony) relations.push('六合');
+  if (rel.isTriple) relations.push('三合');
+  if (rel.isPunish) relations.push('三刑');
+  return relations.join('、');
+}
+
+function analyzeYaoRelations(
+  yaos: Array<{ branch?: string; fiveElement?: string; isMoving?: boolean }>,
+  dayStem: string,
+  dayBranch: string,
+  monthStem: string,
+  monthBranch: string
+) {
+  return yaos.map((yao, idx) => {
+    if (!yao?.isMoving || !yao.branch) return null;
+    const relations: string[] = [];
+    const yaoBranch = yao.branch;
+    const yaoWuxing = yao.fiveElement || BRANCH_WUXING[yaoBranch];
+
+    yaos.forEach((otherYao, otherIdx) => {
+      if (otherIdx === idx || !otherYao?.branch) return;
+      const otherWuxing = otherYao.fiveElement || BRANCH_WUXING[otherYao.branch];
+      if (!yaoWuxing || !otherWuxing) return;
+      if (GENERATES[yaoWuxing] === otherWuxing) {
+        relations.push(`生${YAO_LABELS[otherIdx]}${otherYao.branch}${otherWuxing}`);
+      } else if (OVERCOMES[yaoWuxing] === otherWuxing) {
+        relations.push(`克${YAO_LABELS[otherIdx]}${otherYao.branch}${otherWuxing}`);
+      }
+    });
+
+    if (BRANCH_CLASH[yaoBranch] === dayBranch) {
+      relations.push(`与日辰${dayStem}${dayBranch}六冲`);
+    } else if (BRANCH_HARMONY[yaoBranch] === dayBranch) {
+      relations.push(`与日辰${dayStem}${dayBranch}六合`);
+    }
+
+    if (BRANCH_CLASH[yaoBranch] === monthBranch) {
+      relations.push(`与月令${monthStem}${monthBranch}六冲`);
+    } else if (BRANCH_HARMONY[yaoBranch] === monthBranch) {
+      relations.push(`与月令${monthStem}${monthBranch}六合`);
+    }
+
+    return {
+      yaoBranch,
+      yaoWuxing,
+      relations
+    };
+  });
+}
+
+/**
+ * POST /api/divination/compute
+ * 计算排盘结果（前端提交原始爻位和时间）
+ */
+divinationRouter.post('/compute', async (c) => {
+  let body;
+  try {
+    body = await c.req.json().catch(() => null);
+  } catch (parseError: any) {
+    console.error('[DIVINATION COMPUTE] JSON 解析失败:', parseError);
+    return c.json(
+      errorResponse('请求体格式错误'),
+      400
+    );
+  }
+
+  if (!body || !Array.isArray(body.lines) || body.lines.length !== 6) {
+    return c.json(
+      errorResponse('缺少必要参数：lines'),
+      400
+    );
+  }
+
+  const { lines, dateValue, timeValue, ruleSetKey = 'jingfang-basic', question, manualMode } = body;
+  const dateStr = dateValue && timeValue ? `${dateValue}T${timeValue}:00` : undefined;
+  const date = dateStr ? new Date(dateStr) : new Date();
+
+  try {
+    const result = computeAll(lines, { ruleSetKey, date });
+    const dayBranch = result.timeGanZhi.day.branch;
+    const hourBranch = result.timeGanZhi.hour.branch;
+    const hexBranches = result.yaos
+      .map((y: any) => y.branch)
+      .filter(Boolean) as string[];
+
+    const branchRelations = analyzeBranchRelation(
+      dayBranch as any,
+      hourBranch as any,
+      hexBranches as any
+    );
+    const dayRelations = branchRelations.dayRelations.map((rel: any) => ({
+      ...rel,
+      relationText: formatRelation(rel)
+    }));
+    const hourRelations = branchRelations.hourRelations.map((rel: any) => ({
+      ...rel,
+      relationText: formatRelation(rel)
+    }));
+    const yaoInteractions = analyzeYaoInteractions(
+      result.yaos as any,
+      (result.variantYaos || result.variant.yaos) as any
+    );
+    const yaoRelations = analyzeYaoRelations(
+      result.yaos as any,
+      result.timeGanZhi.day.stem,
+      result.timeGanZhi.day.branch,
+      result.timeGanZhi.month.stem,
+      result.timeGanZhi.month.branch
+    );
+
+    const yaoUi = (result.yaos as any[]).map((yao, idx) => {
+      const interaction = yaoInteractions.find((item: any) => item.yaoIndex === idx);
+      const relation = yaoRelations[idx];
+      const energyLine = result.energyAnalysis?.lines?.find((line: any) => line.position === idx + 1);
+      const fiveElement = yao?.fiveElement || '';
+      const seasonStrength = yao?.seasonStrength || '';
+      return {
+        yaoIndex: idx,
+        yaoLabel: interaction?.yaoLabel || YAO_LABELS[idx],
+        yaoInfo: interaction?.yaoInfo || '',
+        isMoving: !!yao?.isMoving,
+        fiveElement,
+        fiveElementClass: fiveElement ? WUXING_CLASS[fiveElement] : '',
+        seasonStrength,
+        seasonStrengthClass: seasonStrength ? STRENGTH_CLASS[seasonStrength] : '',
+        changsheng: yao?.changsheng || '',
+        relations: relation?.relations || [],
+        variantRelation: interaction?.variantRelation || '',
+        energy: energyLine
+          ? {
+              baseScore: energyLine.base_score,
+              finalScore: energyLine.final_score,
+              level: energyLine.level,
+              tags: energyLine.tags || []
+            }
+          : null
+      };
+    });
+
+    const resultWithAnalysis = {
+      ...result,
+      infoGrid: buildInfoGrid(result, dateValue || '', timeValue || ''),
+      hexagramTable: buildHexagramTable(result),
+      branchRelations: {
+        dayBranch,
+        hourBranch,
+        dayRelations,
+        hourRelations
+      },
+      yaoInteractions,
+      yaoRelations,
+      yaoUi
+    };
+    return c.json(
+      successResponse({
+        result: resultWithAnalysis,
+        meta: {
+          dateValue: dateValue || '',
+          timeValue: timeValue || '',
+          ruleSetKey,
+          question: question || '',
+          manualMode: !!manualMode
+        }
+      })
+    );
+  } catch (error: any) {
+    console.error('[DIVINATION COMPUTE ERROR]', error);
+    return c.json(
+      errorResponse('排盘计算失败，请稍后重试'),
+      500
+    );
+  }
+});
 
 /**
  * 计算排卦去重的哈希值（使用 SubtleCrypto）

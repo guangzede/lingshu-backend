@@ -12,7 +12,8 @@
 		}
 	],
 	"vars": {
-		"JWT_SECRET": "dev_secret_key_123"
+		"JWT_SECRET": "dev_secret_key_123",
+		"AI_API_BASE": "https://liuyao-ai.guangzede530.workers.dev/v1/chat/completions"
 	}
 	// "compatibility_flags": [
 	//   "nodejs_compat"
