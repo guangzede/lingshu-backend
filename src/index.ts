@@ -24,7 +24,9 @@ const app = new Hono<{ Bindings: Bindings }>()
 app.use('/*', cors())
 
 // 健康检查接口
-app.get('/api/health', (c) => c.json({ ok: true, status: 'healthy', timestamp: new Date() }))
+app.get('/api/health', (c) => {
+  return c.json({ ok: true, status: 'healthy', timestamp: new Date() })
+})
 
 // 2. JWT 中间件 (为 /api/* 路由保护)
 app.use('/api/*', (c, next) => {

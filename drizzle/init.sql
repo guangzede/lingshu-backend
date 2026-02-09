@@ -7,7 +7,7 @@ CREATE TABLE `users` (
 	`daily_free_quota` integer DEFAULT 1,
 	`bonus_quota` integer DEFAULT 0,
 	`last_used_date` integer DEFAULT 0,
-	`lingshi` integer DEFAULT 0,
+	`lingshi` integer DEFAULT 1000,
 	`member_level` integer DEFAULT 0,
 	`member_expire_at` integer DEFAULT 0,
 	`member_purchased_at` integer DEFAULT 0,

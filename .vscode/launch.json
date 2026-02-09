@@ -2,17 +2,48 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch Wrangler (dev) with Inspector",
+      "name": "Wrangler dev (local)",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "env": {
-        "NODE_OPTIONS": "--inspect-brk=9229"
-      },
+      // 确保你的 package.json 里有 dev:local 命令，且包含 wrangler dev
+      "runtimeArgs": ["run", "dev:local", "--", "--inspector-port", "9229"],
       "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"],
+      // 给一点时间让 wrangler 启动后再尝试 attach（虽然 compound 是并行的，但这有助于保持控制台干净）
+      "presentation": {
+        "hidden": false
+      }
+    },
+    {
+      "name": "Attach to Wrangler Inspector",
+      "type": "node",  // 关键修改：从 pwa-chrome 改为 node
+      "request": "attach",
+      "port": 9229,
+      "address": "localhost",
+      "restart": true,
+      "timeout": 30000,
+      "localRoot": "${workspaceFolder}",
+      "remoteRoot": "/",
+      // 关键修改：修复 Source Map 映射
+      // Wrangler 有时生成的 sourcemap 路径很奇怪，这几行能覆盖绝大多数情况
+      "sourceMapPathOverrides": {
+        "webpack:///*": "${workspaceFolder}/*",
+        "webpack:///src/*": "${workspaceFolder}/src/*",
+        "meteor://💻app/*": "${workspaceFolder}/*"
+      },
       "skipFiles": ["<node_internals>/**"]
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Dev + Debug Workers",
+      "configurations": [
+        "Wrangler dev (local)",
+        "Attach to Wrangler Inspector"
+      ],
+      // 这是一个小技巧：停止调试时同时杀掉两个进程
+      "stopAll": true
     }
   ]
 }
-

@@ -3,10 +3,10 @@
   "type": "module",
   "scripts": {
    "dev": "wrangler dev --local",
-    "dev:remote": "cross-env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --remote --ip 127.0.0.1 --inspector-ip 127.0.0.1",
-    "dev:local": "cross-env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 WRANGLER_LOG_PATH=.wrangler/logs WRANGLER_HOME=.wrangler XDG_CONFIG_HOME=.wrangler wrangler dev --local --ip 127.0.0.1 --inspector-ip 127.0.0.1",
+    "dev:remote": "wrangler dev --remote",
+    "dev:local": "wrangler dev --local",
     "deployminify": "wrangler deploy --minify",
-    "start": "npm run dev",
+    "start": "wrangler dev --remote",
     "deploy": "wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },

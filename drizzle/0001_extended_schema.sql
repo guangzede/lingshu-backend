@@ -15,7 +15,7 @@ CREATE TABLE users (
   daily_free_quota INTEGER DEFAULT 1,
   bonus_quota INTEGER DEFAULT 0,
   last_used_date INTEGER DEFAULT 0,
-  lingshi INTEGER DEFAULT 0,
+  lingshi INTEGER DEFAULT 1000,
   member_level INTEGER DEFAULT 0,
   member_expire_at INTEGER DEFAULT 0,
   member_purchased_at INTEGER DEFAULT 0,

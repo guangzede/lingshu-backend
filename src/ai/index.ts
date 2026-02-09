@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { drizzle } from 'drizzle-orm/d1';
 import { and, eq, gte } from 'drizzle-orm';
 import { users } from '../schema';
+import { LINGSHI_COSTS } from '../config/lingshi';
 import { errorResponse } from '../utils/response';
 import { JwtPayload } from '../utils/types';
 
@@ -12,7 +13,6 @@ interface CloudflareBindings {
   AI_API_KEY?: string;
 }
 
-const AI_COST_LINGSHI = 100;
 const DEFAULT_AI_BASE = 'https://liuyao-ai.guangzede530.workers.dev/v1/chat/completions';
 
 export const aiRouter = new Hono<{ Bindings: CloudflareBindings }>();
@@ -42,10 +42,14 @@ aiRouter.post('/chat', async (c) => {
   if (!user) {
     return c.json(errorResponse('用户不存在'), 404);
   }
+  // 更新下当前用户lingshi为20000，方便测试
+  // await db.update(users).set({ lingshi: 20000, updatedAt: Date.now() }).where(eq(users.id, payload.id));
 
-  if ((user.lingshi || 0) < AI_COST_LINGSHI) {
+  if ((user.lingshi || 0) < LINGSHI_COSTS.aiChat) {
     return c.json(
-      errorResponse(`灵石不足，需要 ${AI_COST_LINGSHI} 灵石，当前 ${user.lingshi || 0} 灵石`),
+      errorResponse(
+        `灵石不足，需要 ${LINGSHI_COSTS.aiChat} 灵石，当前 ${user.lingshi || 0} 灵石`
+      ),
       400
     );
   }
@@ -54,12 +58,17 @@ aiRouter.post('/chat', async (c) => {
   const deductResult = await db
     .update(users)
     .set({
-      lingshi: (user.lingshi || 0) - AI_COST_LINGSHI,
+      lingshi: (user.lingshi || 0) - LINGSHI_COSTS.aiChat,
       updatedAt: now
     })
-    .where(and(eq(users.id, payload.id), gte(users.lingshi, AI_COST_LINGSHI)));
+    .where(and(eq(users.id, payload.id), gte(users.lingshi, LINGSHI_COSTS.aiChat)));
 
-  if (!deductResult.changes) {
+  const deductChanges =
+    (deductResult as { changes?: number } | undefined)?.changes ??
+    (deductResult as { meta?: { changes?: number } } | undefined)?.meta?.changes ??
+    0;
+
+  if (deductChanges <= 0) {
     return c.json(errorResponse('灵石不足，扣减失败'), 400);
   }
 
@@ -85,7 +94,7 @@ aiRouter.post('/chat', async (c) => {
   } catch (err) {
     await db
       .update(users)
-      .set({ lingshi: (user.lingshi || 0) + AI_COST_LINGSHI, updatedAt: Date.now() })
+      .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
       .where(eq(users.id, payload.id));
     return c.json(errorResponse('AI 服务暂不可用，请稍后再试'), 502);
   }
@@ -93,7 +102,7 @@ aiRouter.post('/chat', async (c) => {
   if (!upstreamRes.ok || !upstreamRes.body) {
     await db
       .update(users)
-      .set({ lingshi: (user.lingshi || 0) + AI_COST_LINGSHI, updatedAt: Date.now() })
+      .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
       .where(eq(users.id, payload.id));
 
     const errorText = await upstreamRes.text().catch(() => '');

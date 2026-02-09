@@ -13,7 +13,7 @@ export const users = sqliteTable('users', {
   lastUsedDate: integer('last_used_date').default(0), // 上次使用配额的日期（YYYYMMDD格式），用于判定是否需要重置
   
   // 灵石系统
-  lingshi: integer('lingshi').default(0), // 灵石余额，默认0
+  lingshi: integer('lingshi').default(1000), // 灵石余额，默认1000
   
   // 会员等级
   memberLevel: integer('member_level').default(0), // 0=非会员，1=会员

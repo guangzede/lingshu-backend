@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
 import { eq, and, gt, gte } from 'drizzle-orm';
 import { users } from '../schema';
+import { LINGSHI_COSTS, LINGSHI_REWARDS } from '../config/lingshi';
 import { successResponse, errorResponse, getTodayDate, isNewDay, maskPhone } from '../utils/response';
 import { JwtPayload } from '../utils/types';
 
@@ -17,15 +18,7 @@ interface CloudflareBindings {
 
 export const memberRouter = new Hono<{ Bindings: CloudflareBindings }>();
 
-/**
- * 灵石兑换价格表
- */
-const EXCHANGE_RATES = {
-  weekly: 3000, // 3000 灵石 = 7 天会员
-  monthly: 20000, // 20000 灵石 = 30 天会员
-  ticket: 50, // 50 灵石 = 单次使用券
-  // 年会员不可兑换，仅通过支付或活动获取
-};
+const EXCHANGE_RATES = LINGSHI_COSTS.exchange;
 
 /**
  * 检查当前用户的配额状态
@@ -204,7 +197,7 @@ memberRouter.post('/exchange', async (c) => {
   const userId = payload.id;
 
   // 验证 type 是否有效
-  if (!EXCHANGE_RATES.hasOwnProperty(type)) {
+  if (!Object.prototype.hasOwnProperty.call(EXCHANGE_RATES, type)) {
     return c.json(
       errorResponse('不支持的兑换类型，仅支持: weekly, monthly, ticket'),
       400
@@ -460,7 +453,7 @@ memberRouter.post('/profile', async (c) => {
       !!nextGender &&
       !!nextBirthday;
 
-    const bonusAwarded = completingNow ? 500 : 0;
+    const bonusAwarded = completingNow ? LINGSHI_REWARDS.profileComplete : 0;
     const nextLingshi = (user.lingshi ?? 0) + bonusAwarded;
 
     await db

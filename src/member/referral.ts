@@ -16,6 +16,7 @@ interface CloudflareBindings {
 }
 
 export const referralRouter = new Hono<{ Bindings: CloudflareBindings }>();
+import { LINGSHI_REWARDS } from '../config/lingshi';
 
 /**
  * 触发分享奖励闭环
@@ -76,7 +77,7 @@ export async function triggerReferralReward(db: any, newUserId: number) {
 
   try {
     // 计算老用户的奖励：100 灵石 + bonus_quota（上限5）
-    const newLingshi = referrer.lingshi + 100;
+    const newLingshi = referrer.lingshi + LINGSHI_REWARDS.referral;
     let newBonusQuota = referrer.bonusQuota;
     let bonusQuotaAwarded = 0;
 
@@ -101,7 +102,7 @@ export async function triggerReferralReward(db: any, newUserId: number) {
       referrerId: newUser.referrerId,
       inviteeId: newUserId,
       rewardType: 'lingshi',
-      lingshiAwarded: 100,
+      lingshiAwarded: LINGSHI_REWARDS.referral,
       bonusQuotaAwarded: 0,
       createdAt: now,
     });
@@ -122,7 +123,7 @@ export async function triggerReferralReward(db: any, newUserId: number) {
       success: true,
       reason: '分享奖励闭环已触发',
       referrerReward: {
-        lingshiAwarded: 100,
+        lingshiAwarded: LINGSHI_REWARDS.referral,
         bonusQuotaAwarded: bonusQuotaAwarded,
         newLingshi,
         newBonusQuota,

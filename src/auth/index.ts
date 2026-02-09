@@ -159,7 +159,7 @@ authRouter.post('/register', async (c) => {
           dailyFreeQuota: 1,
           bonusQuota: 2,
           lastUsedDate: today,
-          lingshi: 0,
+          lingshi: 1000,
           memberLevel: 0,
           memberExpireAt: 0,
           referrerId: resolvedReferrerId,
