@@ -116,10 +116,17 @@ aiRouter.post('/chat', async (c) => {
 
     const upstreamClone = upstreamRes.clone();
     const errorText = await upstreamClone.text().catch(() => '');
+    let errorJson: unknown = undefined;
+    try {
+      errorJson = errorText ? JSON.parse(errorText) : undefined;
+    } catch {
+      errorJson = undefined;
+    }
     console.log('AI upstream error', {
       status: upstreamRes.status,
       headers: Object.fromEntries(upstreamRes.headers.entries()),
       errorText,
+      errorJson,
       upstreamUrl,
       requestBody: body,
       hasApiKey: Boolean(c.env.AI_API_KEY)
