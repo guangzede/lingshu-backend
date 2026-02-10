@@ -15,6 +15,18 @@ interface CloudflareBindings {
 
 const DEFAULT_AI_BASE = 'https://liuyao-ai.guangzede530.workers.dev/v1/chat/completions';
 
+const resolveUpstreamUrl = (configuredBase?: string): string => {
+  const trimmed = configuredBase?.trim();
+  if (!trimmed) {
+    return DEFAULT_AI_BASE;
+  }
+  if (trimmed.includes('/chat/completions')) {
+    return trimmed;
+  }
+  const normalized = trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  return `${normalized}/chat/completions`;
+};
+
 export const aiRouter = new Hono<{ Bindings: CloudflareBindings }>();
 
 aiRouter.post('/chat', async (c) => {
@@ -72,7 +84,7 @@ aiRouter.post('/chat', async (c) => {
     return c.json(errorResponse('灵石不足，扣减失败'), 400);
   }
 
-  const upstreamUrl = 'https://liuyao-ai.guangzede530.workers.dev/v1/chat/completions';
+  const upstreamUrl = resolveUpstreamUrl(c.env.AI_API_BASE);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
