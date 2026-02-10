@@ -72,10 +72,7 @@ aiRouter.post('/chat', async (c) => {
     return c.json(errorResponse('灵石不足，扣减失败'), 400);
   }
 
-  const baseUrl = c.env.AI_API_BASE || DEFAULT_AI_BASE;
-  const upstreamUrl = baseUrl.includes('/v1/chat/completions')
-    ? baseUrl
-    : `${baseUrl}/v1/chat/completions`;
+  const upstreamUrl = 'https://liuyao-ai.guangzede530.workers.dev/v1/chat/completions';
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
