@@ -102,11 +102,24 @@ aiRouter.post('/chat', async (c) => {
       .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
       .where(eq(users.id, payload.id));
 
-    const errorText = await upstreamRes.text().catch(() => '');
-    return c.json(
-      errorResponse(`AI 服务调用失败${errorText ? `: ${errorText}` : ''} upstreamRes:${JSON.stringify(upstreamRes)}  upstreamUrl:${upstreamUrl}`),
-      upstreamRes.status || 502
-    );
+    const upstreamClone = upstreamRes.clone();
+    const errorText = await upstreamClone.text().catch(() => '');
+    console.log('AI upstream error', {
+      status: upstreamRes.status,
+      headers: Object.fromEntries(upstreamRes.headers.entries()),
+      errorText,
+      upstreamUrl,
+      requestBody: body,
+      hasApiKey: Boolean(c.env.AI_API_KEY)
+    });
+    const passthroughHeaders = new Headers(upstreamRes.headers);
+    if (!passthroughHeaders.get('content-type')) {
+      passthroughHeaders.set('content-type', 'text/plain; charset=utf-8');
+    }
+    return new Response(upstreamRes.body ?? errorText, {
+      status: upstreamRes.status || 502,
+      headers: passthroughHeaders
+    });
   }
 
   const contentType = upstreamRes.headers.get('content-type') || 'text/event-stream';
