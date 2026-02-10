@@ -104,7 +104,7 @@ aiRouter.post('/chat', async (c) => {
 
     const errorText = await upstreamRes.text().catch(() => '');
     return c.json(
-      errorResponse(`AI 服务调用失败${errorText ? `: ${errorText}` : ''} upstreamRes:${JSON.stringify(upstreamRes)}`),
+      errorResponse(`AI 服务调用失败${errorText ? `: ${errorText}` : ''} upstreamRes:${JSON.stringify(upstreamRes)}  upstreamUrl:${upstreamUrl}`),
       upstreamRes.status || 502
     );
   }
