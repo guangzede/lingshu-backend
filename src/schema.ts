@@ -64,6 +64,9 @@ export const cases = sqliteTable('cases', {
   // 完整排盘结果（JSON存储，包含所有推演细节）
   result: text('result'), // JSON.stringify(computeAll result)
   
+  // AI 分析报告
+  aiAnalysis: text('ai_analysis'), // AI 生成的分析报告内容
+  
   // 时间戳
   createdAt: integer('created_at').$defaultFn(() => Date.now()),
   updatedAt: integer('updated_at').$defaultFn(() => Date.now()),

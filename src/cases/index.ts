@@ -56,6 +56,7 @@ caseRouter.post('/', async (c) => {
         baseHexName: body.baseHexName || null,
         variantHexName: body.variantHexName || null,
         result: body.result ? JSON.stringify(body.result) : null,
+        aiAnalysis: body.aiAnalysis || null,
         createdAt,
         updatedAt: now
       })
@@ -156,7 +157,8 @@ caseRouter.get('/:id', async (c) => {
         createdAt: Number(row.createdAt),
         baseHexName: row.baseHexName || undefined,
         variantHexName: row.variantHexName || undefined,
-        result
+        result,
+        aiAnalysis: row.aiAnalysis || undefined
       })
     );
   } catch (error: any) {
