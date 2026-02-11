@@ -13,7 +13,7 @@ interface CloudflareBindings {
   AI_API_KEY?: string;
 }
 
-const DEFAULT_AI_BASE = 'https://liuyao-ai.guangzede530.workers.dev/v1/chat/completions';
+const DEFAULT_AI_BASE = 'https://ai.lylingshu.shop/v1/chat/completions';
 
 const resolveUpstreamUrl = (configuredBase?: string): string => {
   const trimmed = configuredBase?.trim();
