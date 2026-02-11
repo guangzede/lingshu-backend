@@ -1,0 +1,10 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "liuyao-ai",
+  "main": "src/index.js",
+  "compatibility_date": "2026-01-28",
+  "workers_dev": true,
+  "ai": {
+    "binding": "AI"
+  }
+}
