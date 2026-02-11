@@ -41,13 +41,31 @@ export const users = sqliteTable('users', {
   updatedAt: integer('updated_at').$defaultFn(() => Date.now()),
 });
 
-// 2. 卦例表 (存排盘数据)
+// 2. 卦例表 (方案B：列化字段存储)
 export const cases = sqliteTable('cases', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  userId: integer('user_id').references(() => users.id), // 关联用户ID
-  title: text('title'),
-  guaData: text('gua_data'), // 存 JSON 字符串
-  note: text('note'),
+  userId: integer('user_id').notNull().references(() => users.id), // 关联用户ID
+  
+  // 起卦基本信息
+  dateValue: text('date_value').notNull(), // YYYY-MM-DD
+  timeValue: text('time_value').notNull(), // HH:mm
+  ruleSetKey: text('rule_set_key').notNull(), // 排盘规则集
+  question: text('question').notNull().default(''), // 求测事项
+  remark: text('remark'), // 备注
+  manualMode: integer('manual_mode').notNull().default(0), // 0=自动 1=手动
+  
+  // 爻位信息（JSON数组序列化，6个爻）
+  lines: text('lines').notNull(), // JSON.stringify([{isYang, isMoving}, ...])
+  
+  // 卦象名称（便于列表展示和搜索）
+  baseHexName: text('base_hex_name'), // 本卦名称
+  variantHexName: text('variant_hex_name'), // 变卦名称
+  
+  // 完整排盘结果（JSON存储，包含所有推演细节）
+  result: text('result'), // JSON.stringify(computeAll result)
+  
+  // 时间戳
+  createdAt: integer('created_at').$defaultFn(() => Date.now()),
   updatedAt: integer('updated_at').$defaultFn(() => Date.now()),
 });
 

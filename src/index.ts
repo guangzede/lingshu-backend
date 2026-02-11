@@ -8,6 +8,7 @@ import { authRouter } from './auth'
 import { memberRouter } from './member/quota'
 import { divinationRouter } from './divination/quota-check'
 import { aiRouter } from './ai'
+import { caseRouter } from './cases'
 import { datetime } from 'drizzle-orm/mysql-core'
 
 // 定义环境类型
@@ -48,23 +49,26 @@ app.route('/api/member', memberRouter)
 // 排盘计算与配额路由
 app.route('/api/divination', divinationRouter)
 
+// 卦例保存与历史
+app.route('/api/cases', caseRouter)
+
 // AI 流式聊天接口
 app.route('/api/ai', aiRouter)
 
 // 4. VIP 专属高级断语接口 (测试鉴权用)
 app.get('/api/pro/interpretation', (c) => {
   const payload = c.get('jwtPayload') // 从 Token 里解出来的用户信息
-  
+
   const isVip = payload.memberExpireAt > Date.now()
-  
+
   if (!isVip) {
-    return c.json({ 
-      isVip: false, 
+    return c.json({
+      isVip: false,
       data: "基础断语：此卦为吉..." // 普通用户看这个
     })
   }
 
-  return c.json({ 
+  return c.json({
     isVip: true,
     data: "【VIP机密】高级断语：官鬼持世，动而化进，旺上加旺..." // VIP 看这个
   })

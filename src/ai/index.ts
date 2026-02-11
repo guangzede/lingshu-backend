@@ -57,31 +57,38 @@ aiRouter.post('/chat', async (c) => {
   // 更新下当前用户lingshi为20000，方便测试
   // await db.update(users).set({ lingshi: 20000, updatedAt: Date.now() }).where(eq(users.id, payload.id));
 
-  if ((user.lingshi || 0) < LINGSHI_COSTS.aiChat) {
-    return c.json(
-      errorResponse(
-        `灵石不足，需要 ${LINGSHI_COSTS.aiChat} 灵石，当前 ${user.lingshi || 0} 灵石`
-      ),
-      400
-    );
-  }
-
   const now = Date.now();
-  const deductResult = await db
-    .update(users)
-    .set({
-      lingshi: (user.lingshi || 0) - LINGSHI_COSTS.aiChat,
-      updatedAt: now
-    })
-    .where(and(eq(users.id, payload.id), gte(users.lingshi, LINGSHI_COSTS.aiChat)));
+  const hasActiveMembership = user.memberLevel === 1 && user.memberExpireAt > now;
+  let lingshiDeducted = false;
 
-  const deductChanges =
-    (deductResult as { changes?: number } | undefined)?.changes ??
-    (deductResult as { meta?: { changes?: number } } | undefined)?.meta?.changes ??
-    0;
+  if (!hasActiveMembership) {
+    if ((user.lingshi || 0) < LINGSHI_COSTS.aiChat) {
+      return c.json(
+        errorResponse(
+          `灵石不足，需要 ${LINGSHI_COSTS.aiChat} 灵石，当前 ${user.lingshi || 0} 灵石`
+        ),
+        400
+      );
+    }
 
-  if (deductChanges <= 0) {
-    return c.json(errorResponse('灵石不足，扣减失败'), 400);
+    const deductResult = await db
+      .update(users)
+      .set({
+        lingshi: (user.lingshi || 0) - LINGSHI_COSTS.aiChat,
+        updatedAt: now
+      })
+      .where(and(eq(users.id, payload.id), gte(users.lingshi, LINGSHI_COSTS.aiChat)));
+
+    const deductChanges =
+      (deductResult as { changes?: number } | undefined)?.changes ??
+      (deductResult as { meta?: { changes?: number } } | undefined)?.meta?.changes ??
+      0;
+
+    if (deductChanges <= 0) {
+      return c.json(errorResponse('灵石不足，扣减失败'), 400);
+    }
+
+    lingshiDeducted = true;
   }
 
   const upstreamUrl = resolveUpstreamUrl(c.env.AI_API_BASE);
@@ -101,18 +108,22 @@ aiRouter.post('/chat', async (c) => {
       body: JSON.stringify(body)
     });
   } catch (err) {
-    await db
-      .update(users)
-      .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
-      .where(eq(users.id, payload.id));
+    if (lingshiDeducted) {
+      await db
+        .update(users)
+        .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
+        .where(eq(users.id, payload.id));
+    }
     return c.json(errorResponse('AI 服务暂不可用，请稍后再试'), 502);
   }
 
   if (!upstreamRes.ok || !upstreamRes.body) {
-    await db
-      .update(users)
-      .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
-      .where(eq(users.id, payload.id));
+    if (lingshiDeducted) {
+      await db
+        .update(users)
+        .set({ lingshi: (user.lingshi || 0) + LINGSHI_COSTS.aiChat, updatedAt: Date.now() })
+        .where(eq(users.id, payload.id));
+    }
 
     const upstreamClone = upstreamRes.clone();
     const errorText = await upstreamClone.text().catch(() => '');
