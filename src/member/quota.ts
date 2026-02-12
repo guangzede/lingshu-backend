@@ -23,6 +23,7 @@ const EXCHANGE_RATES = LINGSHI_COSTS.exchange;
 /**
  * 检查当前用户的配额状态
  * 返回：是否可以排卦 + 剩余可用次数
+ * 新增：如果配额不足，检查灵石是否足够继续排卦
  * @param db Drizzle 数据库实例
  * @param userId 用户ID
  */
@@ -73,17 +74,45 @@ export async function checkQuotaStatus(db: any, userId: number) {
     };
   }
 
+  // 优先级 4：检查灵石是否足够扣减
+  const freeLingshiCost = LINGSHI_COSTS.divineFreeCost;
+  const bonusLingshiCost = LINGSHI_COSTS.divineBonus;
+  const currentLingshi = user.lingshi ?? 0;
+
+  if (currentLingshi >= freeLingshiCost) {
+    return {
+      canDivine: true,
+      reason: `使用灵石排卦（免费次数）：消耗 ${freeLingshiCost} 灵石，剩余 ${currentLingshi - freeLingshiCost}`,
+      quotaRemaining: -2, // 特殊标记：灵石扣减
+    };
+  }
+
+  if (currentLingshi >= bonusLingshiCost) {
+    return {
+      canDivine: true,
+      reason: `使用灵石排卦（赠送配额）：消耗 ${bonusLingshiCost} 灵石，剩余 ${currentLingshi - bonusLingshiCost}`,
+      quotaRemaining: -2, // 特殊标记：灵石扣减
+    };
+  }
+
   // 都没有了，建议兑换灵石
   return {
     canDivine: false,
-    reason: `配额已用尽，可用灵石: ${user.lingshi}`,
+    reason: `配额已用尽，需要 ${freeLingshiCost} 灵石继续排卦，当前灵石：${currentLingshi}`,
     quotaRemaining: 0,
   };
 }
 
 /**
  * 扣减配额（支持事务和并发安全）
- * 返回：是否扣减成功 + 扣减来源
+ * 优先级扣减顺序：
+ * 1. 会员免费 → 直接放行
+ * 2. 每日免费配额 → 扣减并记录日期
+ * 3. 赠送配额 → 扣减额外奖励次数
+ * 4. 灵石扣减
+ *    ├─ 首先尝试扣减「免费次数对应的灵石」(优先消耗)
+ *    └─ 再尝试扣减「赠送配额对应的灵石」(其次消耗)
+ * 
  * @param db Drizzle 数据库实例
  * @param userId 用户ID
  */
@@ -163,9 +192,53 @@ export async function deductQuota(db: any, userId: number) {
     }
   }
 
+  // 优先级 4：灵石扣减（配额全部用尽时）
+  // 4.1 优先扣减「免费次数对应的灵石」(100灵石/次)
+  const freeLingshiCost = LINGSHI_COSTS.divineFreeCost;
+  if ((user.lingshi ?? 0) >= freeLingshiCost) {
+    const result = await db
+      .update(users)
+      .set({
+        lingshi: (user.lingshi ?? 0) - freeLingshiCost,
+        updatedAt: Date.now(),
+      })
+      .where(and(eq(users.id, userId), gte(users.lingshi, freeLingshiCost)));
+
+    if (result.changes > 0) {
+      return {
+        success: true,
+        reason: `灵石扣减（免费次数）：消耗 ${freeLingshiCost} 灵石`,
+        source: 'lingshi_free',
+        lingshiDeducted: freeLingshiCost,
+      };
+    }
+  }
+
+  // 4.2 再扣减「赠送配额对应的灵石」(100灵石/次)
+  const bonusLingshiCost = LINGSHI_COSTS.divineBonus;
+  if ((user.lingshi ?? 0) >= bonusLingshiCost) {
+    const result = await db
+      .update(users)
+      .set({
+        lingshi: (user.lingshi ?? 0) - bonusLingshiCost,
+        updatedAt: Date.now(),
+      })
+      .where(and(eq(users.id, userId), gte(users.lingshi, bonusLingshiCost)));
+
+    if (result.changes > 0) {
+      return {
+        success: true,
+        reason: `灵石扣减（赠送配额）：消耗 ${bonusLingshiCost} 灵石`,
+        source: 'lingshi_bonus',
+        lingshiDeducted: bonusLingshiCost,
+      };
+    }
+  }
+
+  // 都没有，建议兑换灵石
   return {
     success: false,
-    reason: '配额不足，无法排卦',
+    reason: `配额已用尽，需要 ${freeLingshiCost} 灵石继续排卦，当前灵石：${user.lingshi ?? 0}`,
   };
 }
 

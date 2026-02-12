@@ -13,6 +13,7 @@ import { analyzeBranchRelation } from '@/services/ganzhi/branch';
 import { analyzeYaoInteractions } from '@/services/ganzhi/wuxing';
 import { JwtPayload, QuotaCheckResult } from '../utils/types';
 import { checkQuotaStatus, deductQuota } from '../member/quota';
+import { LiuyaoTagsCalculator } from '@/services/liuyao/tagsCalculator';
 
 interface CloudflareBindings {
   lingshu_db: D1Database;
@@ -263,10 +264,28 @@ divinationRouter.post('/compute', async (c) => {
       result.timeGanZhi.month.branch
     );
 
+    const tagsAnalysis = LiuyaoTagsCalculator.calculate({
+      hexName: result.hex.name,
+      yaos: (result.yaos as any[]).map((yao, idx) => ({
+        ...yao,
+        position: idx + 1,
+      })),
+      variantYaos: (result.variantYaos || result.variant?.yaos) as any[],
+      sixGods: (result.yaos as any[]).map((yao: any) => yao.sixGod),
+      date: {
+        dayStem: result.timeGanZhi.day.stem,
+        dayBranch: result.timeGanZhi.day.branch,
+        monthBranch: result.timeGanZhi.month.branch,
+        voidBranches: result.xunKong || [],
+      },
+      timeGanZhi: result.timeGanZhi,
+    }, result.shenSha)
+
     const yaoUi = (result.yaos as any[]).map((yao, idx) => {
       const interaction = yaoInteractions.find((item: any) => item.yaoIndex === idx);
       const relation = yaoRelations[idx];
       const energyLine = result.energyAnalysis?.lines?.find((line: any) => line.position === idx + 1);
+      const tagInfo = tagsAnalysis?.yaoTags?.find((tag: any) => tag.yaoIndex === idx || tag.position === idx + 1);
       const fiveElement = yao?.fiveElement || '';
       const seasonStrength = yao?.seasonStrength || '';
       return {
@@ -281,13 +300,13 @@ divinationRouter.post('/compute', async (c) => {
         changsheng: yao?.changsheng || '',
         relations: relation?.relations || [],
         variantRelation: interaction?.variantRelation || '',
+        tags: tagInfo?.tags || [],
         energy: energyLine
           ? {
-              baseScore: energyLine.base_score,
-              finalScore: energyLine.final_score,
-              level: energyLine.level,
-              tags: energyLine.tags || []
-            }
+            baseScore: energyLine.base_score,
+            finalScore: energyLine.final_score,
+            level: energyLine.level
+          }
           : null
       };
     });
@@ -304,7 +323,7 @@ divinationRouter.post('/compute', async (c) => {
       },
       yaoInteractions,
       yaoRelations,
-      yaoUi
+      yaoUi,
     };
     return c.json(
       successResponse({
@@ -343,7 +362,7 @@ export async function calculateDivinationHash(
   const encoder = new TextEncoder();
   const data = encoder.encode(hashInput);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  
+
   // 将 ArrayBuffer 转换为 hex 字符串
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -496,8 +515,9 @@ divinationRouter.post('/divine', async (c) => {
         {
           success: true,
           quotaDeducted: {
-            source: deductResult.source, // 'membership' | 'daily_free' | 'bonus_quota'
+            source: deductResult.source, // 'membership' | 'daily_free' | 'bonus_quota' | 'lingshi_free' | 'lingshi_bonus'
             reason: deductResult.reason,
+            lingshiDeducted: deductResult.lingshiDeducted, // 仅当灵石扣减时显示
           },
           // 实际的排卦结果由其他模块生成，这里只返回配额信息
           guaData: {

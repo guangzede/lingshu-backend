@@ -62,9 +62,26 @@ export const TRIPLE_PUNISHMENT: Record<Branch, Branch[]> = {
   '辰': ['辰'], '午': ['午'], '酉': ['酉'], '亥': ['亥']  // 自刑
 }
 
+export const SIX_HARM: Record<Branch, Branch> = {
+  '子': '未', '未': '子',
+  '丑': '午', '午': '丑',
+  '寅': '巳', '巳': '寅',
+  '卯': '辰', '辰': '卯',
+  '申': '亥', '亥': '申',
+  '酉': '戌', '戌': '酉'
+}
+
 // ============= 长生十二宫常量 =============
 export const CHANGSHENG_SEQ = ['长生', '沐浴', '冠带', '临官', '帝旺', '衰', '病', '死', '墓', '绝', '胎', '养'] as const
 export type Changsheng = typeof CHANGSHENG_SEQ[number]
+
+export const CHANGSHENG_TABLE: Record<WuXing, Branch[]> = {
+  wood: ['亥', '子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌'],
+  fire: ['寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑'],
+  earth: ['巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰'],
+  metal: ['巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰'],
+  water: ['申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰', '巳', '午', '未'],
+}
 
 export const YANG_START: Branch = '亥' // 阳干起长生亥，顺行
 export const YIN_START: Branch = '午'  // 阴干起长生午，逆行

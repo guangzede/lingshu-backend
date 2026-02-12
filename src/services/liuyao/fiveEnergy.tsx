@@ -7,6 +7,7 @@ import {
     OVERCOMES,
     SIX_CLASH,
     SIX_HARMONY,
+    SIX_HARM,
     BRANCH_ORDER,
     TRIPLE_HARMONY,
     TRIPLE_PUNISHMENT,
@@ -16,6 +17,7 @@ import {
     DAY_BRANCH_GROUP,
     groupOfBranch,
     CHANGSHENG_SEQ,
+    CHANGSHENG_TABLE,
 } from '@/services/ganzhi/constants'
 
 /**
@@ -48,11 +50,6 @@ export interface AnalysisResult {
         base_score: number
         final_score: number
         level: 'SS' | 'S' | 'A' | 'B' | 'C' | 'F'
-        tags: Array<{
-            code: string
-            label: string
-            type: 'buff' | 'debuff' | 'neutral'
-        }>
         audit_logs: string[]
     }>
 }
@@ -62,7 +59,8 @@ type WuXing = keyof typeof WUXING_CN // 'wood' | 'fire' | 'earth' | 'metal' | 'w
 type Branch = keyof typeof BRANCH_WUXING
 
 // 中文五行转英文
-function toWuXingEn(cn: string): WuXing {
+function toWuXingEn(cn: string): WuXing | undefined {
+    if (!cn) return undefined
     return CN_TO_WUXING[cn as keyof typeof CN_TO_WUXING]
 }
 
@@ -113,11 +111,11 @@ function checkTrinity(branches: Branch[]): Branch[] | null {
 function analyzeInteractions(currentBranch: Branch, allLines: Array<{ position: number, branch: Branch, isMoving: boolean }>): { interactions: Array<{ position: number, relation: string }>, tags: StepResult['tags'] } {
     const tags: StepResult['tags'] = []
     const interactions: Array<{ position: number, relation: string }> = []
-    
+
     for (const line of allLines) {
         if (line.branch === currentBranch) continue
         const otherBranch = line.branch
-        
+
         // 检查六冲
         if (SIX_CLASH[currentBranch] === otherBranch) {
             const label = line.isMoving ? '动爻冲' : '静爻冲'
@@ -136,20 +134,14 @@ function analyzeInteractions(currentBranch: Branch, allLines: Array<{ position: 
             interactions.push({ position: line.position, relation: '刑' })
             tags.push({ code: 'PUNISH_WITH_YAO', label: `被${label}`, type: 'debuff' })
         }
-        // 检查害（与天干十干之后的地支关系，这里简化为相对位置）
-        else {
-            const currentIdx = BRANCH_ORDER.indexOf(currentBranch)
-            const otherIdx = BRANCH_ORDER.indexOf(otherBranch)
-            const diff = Math.abs(currentIdx - otherIdx)
-            // 害为相差6个位置（相对相冲）
-            if (diff === 6) {
-                const label = line.isMoving ? '动爻害' : '静爻害'
-                interactions.push({ position: line.position, relation: '害' })
-                tags.push({ code: 'HARM_WITH_YAO', label: `被${label}`, type: 'debuff' })
-            }
+        // 检查害
+        else if (SIX_HARM[currentBranch] === otherBranch) {
+            const label = line.isMoving ? '动爻害' : '静爻害'
+            interactions.push({ position: line.position, relation: '害' })
+            tags.push({ code: 'HARM_WITH_YAO', label: `被${label}`, type: 'debuff' })
         }
     }
-    
+
     return { interactions, tags }
 }
 
@@ -158,7 +150,7 @@ function analyzeInteractions(currentBranch: Branch, allLines: Array<{ position: 
  */
 function analyzeDayMonthRelations(currentBranch: Branch, dayBranch: Branch, monthBranch: Branch): StepResult['tags'] {
     const tags: StepResult['tags'] = []
-    
+
     // 与日支的关系
     if (currentBranch === dayBranch) {
         tags.push({ code: 'SAME_AS_DAY', label: '与日支比', type: 'buff' })
@@ -168,15 +160,10 @@ function analyzeDayMonthRelations(currentBranch: Branch, dayBranch: Branch, mont
         tags.push({ code: 'CLASH_WITH_DAY', label: '与日支冲', type: 'neutral' })
     } else if (TRIPLE_PUNISHMENT[currentBranch]?.includes(dayBranch)) {
         tags.push({ code: 'PUNISH_WITH_DAY', label: '与日支刑', type: 'debuff' })
-    } else {
-        const currentIdx = BRANCH_ORDER.indexOf(currentBranch)
-        const dayIdx = BRANCH_ORDER.indexOf(dayBranch)
-        const diff = Math.abs(currentIdx - dayIdx)
-        if (diff === 6) {
-            tags.push({ code: 'HARM_WITH_DAY', label: '与日支害', type: 'debuff' })
-        }
+    } else if (SIX_HARM[currentBranch] === dayBranch) {
+        tags.push({ code: 'HARM_WITH_DAY', label: '与日支害', type: 'debuff' })
     }
-    
+
     // 与月支的关系
     if (currentBranch === monthBranch) {
         tags.push({ code: 'SAME_AS_MONTH', label: '与月令比', type: 'buff' })
@@ -186,15 +173,10 @@ function analyzeDayMonthRelations(currentBranch: Branch, dayBranch: Branch, mont
         tags.push({ code: 'CLASH_WITH_MONTH', label: '与月令冲', type: 'neutral' })
     } else if (TRIPLE_PUNISHMENT[currentBranch]?.includes(monthBranch)) {
         tags.push({ code: 'PUNISH_WITH_MONTH', label: '与月令刑', type: 'debuff' })
-    } else {
-        const currentIdx = BRANCH_ORDER.indexOf(currentBranch)
-        const monthIdx = BRANCH_ORDER.indexOf(monthBranch)
-        const diff = Math.abs(currentIdx - monthIdx)
-        if (diff === 6) {
-            tags.push({ code: 'HARM_WITH_MONTH', label: '与月令害', type: 'debuff' })
-        }
+    } else if (SIX_HARM[currentBranch] === monthBranch) {
+        tags.push({ code: 'HARM_WITH_MONTH', label: '与月令害', type: 'debuff' })
     }
-    
+
     return tags
 }
 
@@ -212,17 +194,10 @@ function getSeasonStrength(element: WuXing, monthBranch: Branch): '旺' | '相' 
  */
 // 长生十二宫直接用 ganzhi/constants 的顺序
 function getChangShengStatus(element: WuXing, branch: Branch): 'changsheng' | 'mu' | 'ku' | 'jue' | null {
-    // 五行与地支的长生十二宫表
-    let arr: Branch[] = []
-    switch (element) {
-        case 'wood': arr = ['亥', '子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌']; break;
-        case 'fire': arr = ['寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑']; break;
-        case 'earth': arr = ['巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰']; break;
-        case 'metal': arr = ['巳', '午', '未', '申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰']; break;
-        case 'water': arr = ['申', '酉', '戌', '亥', '子', '丑', '寅', '卯', '辰', '巳', '午', '未']; break;
-    }
-    if (!arr) return null
-    const idx = arr.indexOf(branch)
+    if (!element || !branch) return null
+    const sequence = CHANGSHENG_TABLE[element]
+    if (!sequence) return null
+    const idx = sequence.indexOf(branch)
     if (idx === -1) return null
     const label = CHANGSHENG_SEQ[idx]
     if (label === '长生') return 'changsheng'
@@ -347,6 +322,9 @@ function step3Mutation(params: any, prev: StepResult): StepResult {
 function step4Override(params: any, prev: StepResult, trinity: Branch[] | null): StepResult {
     let { score, tags, logs, level } = prev
     const { branch, isMoving, changeBranch, element } = params
+    if (!element || !branch) {
+        return { score, tags, logs, level }
+    }
     if (trinity && trinity.includes(branch)) {
         score = 150; level = 'SS'
         tags.push({ code: 'TRINITY', label: '三合局', type: 'buff' })
@@ -386,14 +364,14 @@ export class LingshuEnergyCalculator {
         const { date, lines } = input
         const { monthBranch, dayBranch, voidBranches } = date
         const result: AnalysisResult = { lines: [] }
-        
+
         // 预处理：建立所有爻的分支和位置映射
         const allYaoInfo = lines.map(line => ({
             position: line.position,
             branch: line.branch as Branch,
             isMoving: line.isMoving
         }))
-        
+
         for (const line of lines) {
             const element = toWuXingEn(line.element)
             const branch = line.branch as Branch
@@ -401,16 +379,7 @@ export class LingshuEnergyCalculator {
             const changeBranch = line.changeBranch as Branch | undefined
             const changeElement = line.changeElement ? toWuXingEn(line.changeElement) : undefined
             const position = line.position
-            
-            // 分析与其他爻的刑冲合害
-            const { interactions, tags: interactionTags } = analyzeInteractions(branch, allYaoInfo)
-            
-            // 分析与日支、月支的比合关系
-            const dayMonthTags = analyzeDayMonthRelations(branch, dayBranch as Branch, monthBranch as Branch)
-            
-            // 合并所有交互 tags
-            const allInteractionTags = [...interactionTags, ...dayMonthTags]
-            
+
             // 三合局判断：本爻、变爻、日、月
             const trinityBranches = [branch, changeBranch, dayBranch as Branch, monthBranch as Branch].filter(Boolean) as Branch[]
             const trinity = checkTrinity(trinityBranches)
@@ -418,23 +387,23 @@ export class LingshuEnergyCalculator {
             let stepParams = { element, branch, monthBranch: monthBranch as Branch, dayBranch: dayBranch as Branch, isMoving, changeBranch, changeElement, voidBranches }
             let r1 = step1Seasonality(stepParams)
             if (r1.override) {
-                result.lines.push({ position, base_score: r1.score, final_score: r1.score, level: r1.level || getLevel(r1.score), tags: [...r1.tags, ...allInteractionTags], audit_logs: r1.logs }); continue
+                result.lines.push({ position, base_score: r1.score, final_score: r1.score, level: r1.level || getLevel(r1.score), audit_logs: r1.logs }); continue
             }
             let r2 = step2DayAuthority(stepParams, r1)
             if (r2.override) {
-                result.lines.push({ position, base_score: r1.score, final_score: r2.score, level: r2.level || getLevel(r2.score), tags: [...r2.tags, ...allInteractionTags], audit_logs: r2.logs }); continue
+                result.lines.push({ position, base_score: r1.score, final_score: r2.score, level: r2.level || getLevel(r2.score), audit_logs: r2.logs }); continue
             }
             let r3 = step3Mutation(stepParams, r2)
             if (r3.override) {
-                result.lines.push({ position, base_score: r1.score, final_score: r3.score, level: r3.level || getLevel(r3.score), tags: [...r3.tags, ...allInteractionTags], audit_logs: r3.logs }); continue
+                result.lines.push({ position, base_score: r1.score, final_score: r3.score, level: r3.level || getLevel(r3.score), audit_logs: r3.logs }); continue
             }
             let r4 = step4Override(stepParams, r3, trinity)
             if (r4.override) {
-                result.lines.push({ position, base_score: r1.score, final_score: r4.score, level: r4.level || getLevel(r4.score), tags: [...r4.tags, ...allInteractionTags], audit_logs: r4.logs }); continue
+                result.lines.push({ position, base_score: r1.score, final_score: r4.score, level: r4.level || getLevel(r4.score), audit_logs: r4.logs }); continue
             }
             let r5 = step5FinalFilter(stepParams, r4)
             const finalScore = Math.max(0, Math.min(150, r5.score))
-            result.lines.push({ position, base_score: r1.score, final_score: finalScore, level: r5.level || getLevel(finalScore), tags: [...r5.tags, ...allInteractionTags], audit_logs: r5.logs })
+            result.lines.push({ position, base_score: r1.score, final_score: finalScore, level: r5.level || getLevel(finalScore), audit_logs: r5.logs })
         }
         return result
     }

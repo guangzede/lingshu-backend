@@ -61,6 +61,7 @@ drizzle/
 ### 1️⃣ 登录与注册（登录即注册）
 
 **流程：**
+
 ```
 用户输入 username + password + phone + 可选(referrerId, deviceId)
   ↓
@@ -80,18 +81,30 @@ drizzle/
 ### 2️⃣ 配额管理（优先级顺序）
 
 **排卦前检查优先级：**
+
 1. **会员免费** → 若 memberLevel=1 且 memberExpireAt > now，无需扣费，直接放行
 2. **每日免费配额** → 若 lastUsedDate != 今天，重置 dailyFreeQuota=1；若 >0，可用
 3. **赠送配额** → 若 bonusQuota > 0，可用；扣减时使用 WHERE bonusQuota > 0 防止负数
-4. **灵石兑换** → 若都用完，提示用户灵石不足，建议兑换
+4. **灵石扣减**（配额全部用尽时）
+   - 4.1 优先扣减「免费次数对应的灵石」（100 灵石/次）
+   - 4.2 再扣减「赠送配额对应的灵石」（100 灵石/次）
+   - 若灵石都不足，提示用户需要充值
 
-**灵石兑换价格：**
+**灵石兑换与消耗价格：**
+
 ```
-700 灵石  = 7 天周会员
-3000 灵石 = 30 天月会员
+排卦消耗：
+  - 免费次数灵石成本：100 灵石/次
+  - 赠送配额灵石成本：100 灵石/次
+
+会员兑换：
+  - 700 灵石  = 7 天周会员
+  - 3000 灵石 = 30 天月会员
+  - 100 灵石  = 1 次排卦券
 ```
 
 **会员有效期堆叠逻辑：**
+
 ```javascript
 newExpireAt = max(now, currentMemberExpireAt) + daysToAdd
 // 确保重复兑换时有效期顺延而非覆盖
@@ -100,10 +113,12 @@ newExpireAt = max(now, currentMemberExpireAt) + daysToAdd
 ### 3️⃣ 分享奖励闭环
 
 **触发条件：** 新用户同时完成
+
 - ✅ username 注册
 - ✅ phone 绑定
 
 **双向奖励：**
+
 ```
 新用户奖励：
   └─ 已在注册时获得 3 次体验（1 dailyFreeQuota + 2 bonusQuota）
@@ -116,12 +131,14 @@ newExpireAt = max(now, currentMemberExpireAt) + daysToAdd
 ### 4️⃣ 排卦去重与配额扣减
 
 **5 分钟去重哈希：**
+
 ```
 SHA256(userId + subject + category)
 // 同一用户，同一事由，同一类别，5分钟内不重复扣费
 ```
 
 **配额检查顺序：**
+
 ```
 POST /api/divination/check-quota
   ↓
@@ -133,7 +150,9 @@ POST /api/divination/check-quota
          ├─ 会员状态？→ canDivine=true
          ├─ 免费次数？→ canDivine=true
          ├─ 赠送次数？→ canDivine=true
-         └─ 都没有？→ canDivine=false
+         ├─ 灵石足够兑换免费次数？→ canDivine=true（100灵石）
+         ├─ 灵石足够兑换赠送配额？→ canDivine=true（100灵石）
+         └─ 都没有？→ canDivine=false（提示需要灵石）
 ```
 
 ---
@@ -141,6 +160,7 @@ POST /api/divination/check-quota
 ## 🗂️ 数据库表结构
 
 ### users 表
+
 ```typescript
 {
   id: integer (PK),
@@ -161,6 +181,7 @@ POST /api/divination/check-quota
 ```
 
 ### divinationRecords 表
+
 ```typescript
 {
   id: integer (PK),
@@ -173,6 +194,7 @@ POST /api/divination/check-quota
 ```
 
 ### referralRewards 表
+
 ```typescript
 {
   id: integer (PK),
@@ -190,6 +212,7 @@ POST /api/divination/check-quota
 ## 🔑 关键特性
 
 ### 并发安全性
+
 ```typescript
 // ✅ 防止负值扣减
 UPDATE users
@@ -201,6 +224,7 @@ const newExpireAt = Math.max(now, user.memberExpireAt) + daysToAdd;
 ```
 
 ### 时间处理
+
 ```typescript
 // 统一使用 UTC+8（北京时间）
 function getTodayDate(): number {
@@ -211,6 +235,7 @@ function getTodayDate(): number {
 ```
 
 ### 隐敏处理
+
 ```typescript
 // 手机号隐敏：189****1234
 maskPhone("18900001234") → "189****1234"
@@ -221,6 +246,7 @@ maskPhone("18900001234") → "189****1234"
 ## 📊 响应格式统一
 
 ### 成功响应 (200)
+
 ```json
 {
   "code": 200,
@@ -230,6 +256,7 @@ maskPhone("18900001234") → "189****1234"
 ```
 
 ### 错误响应
+
 ```json
 {
   "code": 400 | 401 | 403 | 500,
@@ -242,6 +269,7 @@ maskPhone("18900001234") → "189****1234"
 ## 🧪 常见测试场景
 
 ### 场景 1：完整新用户流程
+
 ```bash
 1. POST /auth/login (username + password + phone)
    ↓ 获得 token
@@ -254,6 +282,7 @@ maskPhone("18900001234") → "189****1234"
 ```
 
 ### 场景 2：推荐奖励闭环
+
 ```bash
 1. 推荐人创建账户 → 记录 ID (如 5)
 2. 新用户登录并携带 referrerId=5
@@ -264,6 +293,7 @@ maskPhone("18900001234") → "189****1234"
 ```
 
 ### 场景 3：灵石兑换会员
+
 ```bash
 1. 用户拥有 700+ 灵石
 2. POST /api/member/exchange (type: weekly)
@@ -272,6 +302,7 @@ maskPhone("18900001234") → "189****1234"
 ```
 
 ### 场景 4：5分钟去重
+
 ```bash
 1. POST /api/divination/divine (subject: "财运", category: "财运")
    ↓ 成功排卦，记录 hash
@@ -286,6 +317,7 @@ maskPhone("18900001234") → "189****1234"
 ## 🚀 本地开发与部署
 
 ### 本地开发
+
 ```bash
 # 安装依赖
 npm install
@@ -302,6 +334,7 @@ npx drizzle-kit studio
 ```
 
 ### 生产部署 (Cloudflare Workers)
+
 ```bash
 # 设置环境变量（wrangler.toml）
 JWT_SECRET = "强随机密钥"
@@ -315,18 +348,23 @@ npm run deploy
 ## ⚠️ 常见问题
 
 ### Q1: 为什么新用户有 2 次 bonusQuota？
+
 A: 新用户首日体验策略 → 1 dailyFreeQuota + 2 bonusQuota = 3 次，提高用户首日体验。
 
 ### Q2: 会员过期后，配额如何重置？
+
 A: 会员过期后，下一次排卦时检查 memberExpireAt，发现已过期则按优先级检查免费配额。
 
 ### Q3: 同一用户，不同事由，5分钟内是否会去重？
+
 A: **不会**。Hash 包含了 subject 和 category，不同的问题有不同的 hash，不会被视为重复。
 
 ### Q4: bonusQuota 超过 5 上限后怎么办？
+
 A: 达到上限（5）后，新分享成功不再增加 bonusQuota，仅增加 100 灵石。
 
 ### Q5: 用户可以一次兑换多个会员吗？
+
 A: 可以。每次兑换时，新有效期 = max(now, 当前有效期) + 兑换天数，实现堆叠。
 
 ---

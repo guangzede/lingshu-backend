@@ -52,3 +52,6 @@ export {
   groupOfBranch,
   type Changsheng
 } from './constants'
+
+// Tags计算器
+export { LiuyaoTagsCalculator, type TagInfo, type HexagramTagsResult } from './tagsCalculator'
