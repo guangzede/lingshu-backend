@@ -266,6 +266,12 @@ divinationRouter.post('/compute', async (c) => {
 
     const tagsAnalysis = LiuyaoTagsCalculator.calculate({
       hexName: result.hex.name,
+      hexInfo: {
+        palace: result.hex.palace,
+        palaceCategory: result.hex.palaceCategory,
+        shiIndex: result.hex.shiIndex,
+        yingIndex: result.hex.yingIndex,
+      },
       yaos: (result.yaos as any[]).map((yao, idx) => ({
         ...yao,
         position: idx + 1,

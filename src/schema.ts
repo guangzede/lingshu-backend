@@ -72,6 +72,29 @@ export const cases = sqliteTable('cases', {
   updatedAt: integer('updated_at').$defaultFn(() => Date.now()),
 });
 
+// 2.1 八字案例表
+export const baziCases = sqliteTable('bazi_cases', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('user_id').notNull().references(() => users.id),
+
+  name: text('name'), // 案例名称/标题
+  note: text('note'), // 案例笔记
+
+  birthDate: text('birth_date'), // YYYY-MM-DD
+  birthTime: text('birth_time'), // HH:mm
+  calendar: text('calendar'), // solar/lunar
+  timeMode: text('time_mode'), // beijing/trueSolar
+  gender: text('gender'), // male/female
+  manualMode: integer('manual_mode').notNull().default(0),
+
+  pillars: text('pillars').notNull(), // JSON: {year,month,day,hour}
+  options: text('options'), // JSON: directionRule, startAge, startYear...
+  result: text('result'), // JSON: 计算结果
+
+  createdAt: integer('created_at').$defaultFn(() => Date.now()),
+  updatedAt: integer('updated_at').$defaultFn(() => Date.now()),
+});
+
 // 3. 排卦记录表 (用于5分钟内去重检查)
 export const divinationRecords = sqliteTable('divination_records', {
   id: integer('id').primaryKey({ autoIncrement: true }),

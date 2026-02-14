@@ -9,6 +9,8 @@ import { memberRouter } from './member/quota'
 import { divinationRouter } from './divination/quota-check'
 import { aiRouter } from './ai'
 import { caseRouter } from './cases'
+import { baziRouter } from './bazi'
+import { baziCaseRouter } from './bazi/cases'
 import { datetime } from 'drizzle-orm/mysql-core'
 
 // 定义环境类型
@@ -32,7 +34,7 @@ app.get('/api/health', (c) => {
 // 2. JWT 中间件 (为 /api/* 路由保护)
 app.use('/api/*', (c, next) => {
   const path = c.req.path
-  if (path.startsWith('/api/auth') || path === '/api/health' || path === '/api/divination/compute') {
+  if (path.startsWith('/api/auth') || path === '/api/health' || path === '/api/divination/compute' || path === '/api/bazi/compute') {
     return next()
   }
   const secret = c.env.JWT_SECRET || 'dev_secret_key_123'
@@ -51,6 +53,10 @@ app.route('/api/divination', divinationRouter)
 
 // 卦例保存与历史
 app.route('/api/cases', caseRouter)
+
+// 八字排盘
+app.route('/api/bazi', baziRouter)
+app.route('/api/bazi/cases', baziCaseRouter)
 
 // AI 流式聊天接口
 app.route('/api/ai', aiRouter)

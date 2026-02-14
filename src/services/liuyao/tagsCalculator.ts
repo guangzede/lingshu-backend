@@ -2,8 +2,8 @@
  * 六爻完整Tags计算模块
  * 整合：暗动、月破、日破、空亡、空亡填实、冲空实空、12长生、进神、退神、
  * 六合、六冲、三合、三刑、六害、合处逢冲、冲处逢合、墓库、入墓、出墓、
- * 回头生、回头克、伏藏与飞神生克、伏神临日月、伏神有气、六神、六亲、
- * 世应关系、爻位、内外卦位置、游魂归魂卦、神煞、太岁、月将、贵人临爻、
+ * 回头生、回头克、伏藏与飞神生克、伏神临日月、伏神有气、六神得助、
+ * 世应关系、爻位、游魂归魂卦、神煞、太岁、月将、贵人临爻、
  * 随鬼入墓、反吟、伏吟、用神忌神权重、动爻与静爻生克
  */
 
@@ -23,7 +23,6 @@ import {
   OVERCOMES,
   SIX_CLASH,
   SIX_HARMONY,
-  BRANCH_ORDER,
   TRIPLE_HARMONY,
   TRIPLE_PUNISHMENT,
   SIX_HARM,
@@ -90,24 +89,33 @@ export class LiuyaoTagsCalculator {
       day?: { stem: Stem; branch: Branch }
       hour?: { stem: Stem; branch: Branch }
     }
+    hexInfo?: {
+      palace?: string
+      palaceCategory?: string
+      shiIndex?: number
+      yingIndex?: number
+    }
   }, shenShaResult?: ShenShaResult): HexagramTagsResult {
     const result: HexagramTagsResult = {
       globalTags: [],
       yaoTags: [],
     }
 
-    const { yaos, variantYaos = [], sixGods = [], date, hexName, timeGanZhi = {} } = input
-    const { dayStem, dayBranch, monthBranch, voidBranches } = date
+    const { yaos, variantYaos = [], sixGods = [], date, hexName, timeGanZhi = {}, hexInfo } = input
+    const { dayBranch, monthBranch, voidBranches } = date
+    const shiIndex = this.normalizeIndex(hexInfo?.shiIndex, yaos.length)
+    const yingIndex = this.normalizeIndex(hexInfo?.yingIndex, yaos.length)
+    const indexMode = this.resolveIndexMode(yaos)
 
     // ========== 全局卦象Tags ==========
     const globalTags: TagInfo[] = []
 
     // 1. 游魂归魂卦判定
-    const hexTags = this.analyzeHexType(hexName, yaos)
+    const hexTags = this.analyzeHexType(hexInfo)
     globalTags.push(...hexTags)
 
     // 2. 世应关系
-    const worldApplyTag = this.analyzeWorldApply(yaos)
+    const worldApplyTag = this.analyzeWorldApply(yaos, shiIndex, yingIndex, indexMode)
     if (worldApplyTag) {
       globalTags.push(worldApplyTag)
       result.worldApplyRelation = worldApplyTag.label
@@ -127,6 +135,14 @@ export class LiuyaoTagsCalculator {
     globalTags.push(...shenShaTaggs)
 
     result.globalTags = globalTags
+    if (hexName || hexInfo?.palace) {
+      result.hexInfo = {
+        name: hexName || '',
+        palace: hexInfo?.palace,
+        isGhostHex: hexInfo?.palaceCategory === '游魂',
+        isReturningHex: hexInfo?.palaceCategory === '归魂',
+      }
+    }
 
     // ========== 爻位Tags ==========
     const yaoTags: YaoTagsResult[] = []
@@ -136,9 +152,9 @@ export class LiuyaoTagsCalculator {
       const variantYao = variantYaos[i]
       const yaoElement = this.toWuXing(yao.fiveElement)
       const variantElement = variantYao?.fiveElement ? this.toWuXing(variantYao.fiveElement) : undefined
-      const position = (yao.position || i + 1) as number
-      const yaoLabels = ['上爻', '五爻', '四爻', '三爻', '二爻', '初爻']
-      const yaoLabel = yaoLabels[i] || `第${position}爻`
+      const topIndex = this.getTopIndex(yao, i, indexMode)
+      const position = topIndex + 1
+      const yaoLabel = this.getYaoLabelByTopIndex(topIndex)
 
       const yaoTagsArray: TagInfo[] = []
 
@@ -148,13 +164,29 @@ export class LiuyaoTagsCalculator {
         label: yaoLabel,
         category: 'position',
         type: 'neutral',
-        description: `第${position}爻，${yaoLabels[i]}`,
+        description: `此爻为${yaoLabel}`,
       }
       yaoTagsArray.push(positionTag)
 
-      // 内外卦位置
-      const trigamTag = this.analyzeTrigramPosition(i)
-      if (trigamTag) yaoTagsArray.push(trigamTag)
+      // 世应标记
+      if (shiIndex === topIndex) {
+        yaoTagsArray.push({
+          code: 'WORLD_LINE',
+          label: '世爻',
+          category: 'position',
+          type: 'neutral',
+          description: '此爻为世爻，主自身与问事主体',
+        })
+      }
+      if (yingIndex === topIndex) {
+        yaoTagsArray.push({
+          code: 'RESPOND_LINE',
+          label: '应爻',
+          category: 'position',
+          type: 'neutral',
+          description: '此爻为应爻，主对方与外在条件',
+        })
+      }
 
       // 2. 暗动 (日冲，旺相)
       if (!yao.isMoving && yao.branch) {
@@ -169,7 +201,7 @@ export class LiuyaoTagsCalculator {
           label: '月破',
           category: 'seasonal',
           type: 'debuff',
-          description: `${yao.branch}与月令${monthBranch}相冲（月破），爻象在本月被压制，事象难以展开`,
+          description: `此爻地支与月令相冲，为月破，本月气势受制，事象难以展开`,
         })
       }
 
@@ -182,7 +214,7 @@ export class LiuyaoTagsCalculator {
             label: '日破',
             category: 'seasonal',
             type: 'debuff',
-            description: `日冲且${strength}`,
+            description: `此爻被日支冲且处${strength}，为日破，当日多阻`,
           })
         }
       }
@@ -194,7 +226,7 @@ export class LiuyaoTagsCalculator {
           label: '空亡',
           category: 'seasonal',
           type: 'neutral',
-          description: '爻位落在旬空范围内，事象虚空、难以落实',
+          description: '此爻逢旬空，气虚不实，事象难以落实',
         })
 
         // 5a. 空亡填实 (旬空遇冲)
@@ -204,7 +236,7 @@ export class LiuyaoTagsCalculator {
             label: '空亡填实',
             category: 'seasonal',
             type: 'buff',
-            description: '动爻空亡遇日冲可填实，事象得以复活成就',
+            description: '此爻旬空又逢日冲（动爻），有填实之机，事象可转实',
           })
         }
       }
@@ -220,7 +252,7 @@ export class LiuyaoTagsCalculator {
             label: '冲空实空',
             category: 'seasonal',
             type: 'debuff',
-            description: '空亡之爻遭日冲，原想填实反而加重空亡，事象陷入矛盾纠缠',
+            description: '此爻旬空且为静爻，又遭日冲，空象更甚，事多落空',
           })
         }
       }
@@ -248,7 +280,7 @@ export class LiuyaoTagsCalculator {
 
       // 9. 六合、六冲、三刑、六害
       if (yao.branch) {
-        const interactionTags = this.analyzeInteractions(yao.branch, yaos, i, dayBranch, monthBranch)
+        const interactionTags = this.analyzeInteractions(yao.branch, yaos, i, dayBranch, monthBranch, indexMode)
         yaoTagsArray.push(...interactionTags)
       }
 
@@ -278,38 +310,38 @@ export class LiuyaoTagsCalculator {
 
       // 14. 伏神临日月、伏神有气
       if (yao.branch) {
-        const hiddenDeityTags = this.analyzeHiddenDeity(yao.branch, dayBranch, monthBranch, yaoElement)
+        const hiddenDeityTags = this.analyzeHiddenDeity(yao, dayBranch, monthBranch)
         yaoTagsArray.push(...hiddenDeityTags)
       }
 
-      // 15. 六神
-      if (yao.position !== undefined && sixGods && sixGods[i]) {
-        yaoTagsArray.push({
-          code: `SIXGOD_${sixGods[i]}`,
-          label: `六神：${sixGods[i]}`,
-          category: 'spiritual',
-          type: 'neutral',
-          description: `${sixGods[i]}临此爻，影响事象的性质与走势`,
-        })
+      // 15. 六神得助：六神五行与爻支同气
+      if (sixGods && sixGods[i] && yao.branch) {
+        const godElement = this.getSixGodElement(sixGods[i])
+        const branchElement = BRANCH_WUXING[yao.branch]
+        if (godElement && branchElement && godElement === branchElement) {
+          yaoTagsArray.push({
+            code: `SIXGOD_SUPPORT_${sixGods[i]}`,
+            label: `得神助`,
+            category: 'spiritual',
+            type: 'buff',
+            description: `此爻六神与地支同气，得神助而势有扶持`,
+          })
+        }
       }
 
-      // 16. 六亲
-      const sixRelativeTag = this.analyzeSixRelatives(yao, dayStem)
-      if (sixRelativeTag) yaoTagsArray.push(sixRelativeTag)
-
-      // 17. 动爻与静爻生克
+      // 16. 动爻与静爻生克
       if (yao.isMoving && yaoElement) {
-        const relTags = this.analyzeMovingStaticRelation(yaoElement, yaos, i)
+        const relTags = this.analyzeMovingStaticRelation(yaoElement, yaos, i, indexMode)
         yaoTagsArray.push(...relTags)
       }
 
-      // 18. 随鬼入墓
+      // 17. 随鬼入墓
       if (yao.isMoving && variantYao?.branch && yaoElement) {
-        const ghostTombTag = this.analyzeGhostInTomb(yaoElement, variantYao.branch)
+        const ghostTombTag = this.analyzeGhostInTomb(yao, variantYao.branch, yaoElement)
         if (ghostTombTag) yaoTagsArray.push(ghostTombTag)
       }
 
-      // 19. 反吟、伏吟
+      // 18. 反吟、伏吟
       if (yao.branch && variantYao?.branch) {
         const yinTag = this.analyzeYinPattern(yao.branch, variantYao.branch)
         if (yinTag) yaoTagsArray.push(yinTag)
@@ -332,36 +364,26 @@ export class LiuyaoTagsCalculator {
   /**
    * 分析卦象类型（游魂、归魂）
    */
-  private static analyzeHexType(hexName: string | undefined, yaos: Yao[]): TagInfo[] {
+  private static analyzeHexType(hexInfo?: { palaceCategory?: string }): TagInfo[] {
     const tags: TagInfo[] = []
 
-    if (!hexName) return tags
-
-    // 简单判断：根据动爻位置判断游魂/归魂
-    const movingYaos = yaos.map((y, i) => (y.isMoving ? i : -1)).filter((i) => i !== -1)
-
-    if (movingYaos.length > 0) {
-      const lastMoving = movingYaos[movingYaos.length - 1]
-
-      if (lastMoving === 4) {
-        // 五爻动为游魂
-        tags.push({
-          code: 'GHOST_HEX',
-          label: '游魂卦',
-          category: 'position',
-          type: 'neutral',
-          description: '五爻动爻，为游魂',
-        })
-      } else if (lastMoving === 5) {
-        // 上爻动为归魂
-        tags.push({
-          code: 'RETURNING_HEX',
-          label: '归魂卦',
-          category: 'position',
-          type: 'neutral',
-          description: '上爻动爻，为归魂',
-        })
-      }
+    const category = hexInfo?.palaceCategory
+    if (category === '游魂') {
+      tags.push({
+        code: 'GHOST_HEX',
+        label: '游魂卦',
+        category: 'position',
+        type: 'neutral',
+        description: '本卦属游魂卦（八宫归类），魂气离位，事象漂泊反复、难定局',
+      })
+    } else if (category === '归魂') {
+      tags.push({
+        code: 'RETURNING_HEX',
+        label: '归魂卦',
+        category: 'position',
+        type: 'neutral',
+        description: '本卦属归魂卦（八宫归类），魂归本位，事象回转内敛、有归复之象',
+      })
     }
 
     return tags
@@ -370,49 +392,60 @@ export class LiuyaoTagsCalculator {
   /**
    * 分析世应关系
    */
-  private static analyzeWorldApply(yaos: Yao[]): TagInfo | null {
-    // 简化实现：世爻在初爻，应爻在比爻
-    // 完整实现需要根据起卦方式确定
+  private static analyzeWorldApply(
+    yaos: Yao[],
+    shiIndex: number | undefined,
+    yingIndex: number | undefined,
+    indexMode: 'top' | 'bottom'
+  ): TagInfo | null {
     if (yaos.length < 6) return null
+    if (shiIndex === undefined || yingIndex === undefined) return null
 
-    const worldYao = yaos[5] // 初爻为世
-    const applyYao = yaos[4] // 二爻为应
+    const worldArrayIndex = this.getArrayIndexByTopIndex(yaos, shiIndex, indexMode)
+    const applyArrayIndex = this.getArrayIndexByTopIndex(yaos, yingIndex, indexMode)
+    if (worldArrayIndex === undefined || applyArrayIndex === undefined) return null
 
-    if (worldYao.branch && applyYao.branch) {
-      const worldElement = this.toWuXing(worldYao.fiveElement)
-      const applyElement = this.toWuXing(applyYao.fiveElement)
-      const relation = this.getRelationName(worldElement, applyElement)
-      return {
-        code: 'WORLD_APPLY_RELATION',
-        label: `世应关系：${relation}`,
-        category: 'position',
-        type: relation === '生' ? 'buff' : relation === '克' ? 'debuff' : 'neutral',
-      }
+    const worldYao = yaos[worldArrayIndex]
+    const applyYao = yaos[applyArrayIndex]
+    if (!worldYao || !applyYao || !worldYao.branch || !applyYao.branch) return null
+
+    const worldElement = this.toWuXing(worldYao.fiveElement)
+    const applyElement = this.toWuXing(applyYao.fiveElement)
+    const relation = this.getRelationName(worldElement, applyElement)
+    const reverseRelation = this.getRelationName(applyElement, worldElement)
+
+    let relationLabel = '世应无关'
+    let description = '世应五行无生克，比助不明'
+    let type: 'buff' | 'debuff' | 'neutral' = 'neutral'
+
+    if (relation === '生') {
+      relationLabel = '世生应'
+      description = '世爻五行生应爻五行，我方对对方有扶持之势'
+      type = 'buff'
+    } else if (reverseRelation === '生') {
+      relationLabel = '应生世'
+      description = '应爻五行生世爻五行，外缘对我有扶助之势'
+      type = 'buff'
+    } else if (relation === '克') {
+      relationLabel = '世克应'
+      description = '世爻五行克应爻五行，我方对对方有制约之势'
+      type = 'debuff'
+    } else if (reverseRelation === '克') {
+      relationLabel = '应克世'
+      description = '应爻五行克世爻五行，外缘对我有制约之势'
+      type = 'debuff'
+    } else if (relation === '比') {
+      relationLabel = '世应比和'
+      description = '世应同气，比和相应，彼此对等'
+      type = 'neutral'
     }
 
-    return null
-  }
-
-  /**
-   * 分析爻位（内外卦）
-   */
-  private static analyzeTrigramPosition(yaoIndex: number): TagInfo | null {
-    if (yaoIndex < 3) {
-      return {
-        code: 'INNER_TRIGRAM',
-        label: '内卦',
-        category: 'position',
-        type: 'neutral',
-        description: '爻位处于内卦，代表情境与基础',
-      }
-    } else {
-      return {
-        code: 'OUTER_TRIGRAM',
-        label: '外卦',
-        category: 'position',
-        type: 'neutral',
-        description: '爻位处于外卦，代表变化与结果',
-      }
+    return {
+      code: 'WORLD_APPLY_RELATION',
+      label: `世应：${relationLabel}`,
+      category: 'position',
+      type,
+      description,
     }
   }
 
@@ -433,7 +466,7 @@ export class LiuyaoTagsCalculator {
           label: '暗动',
           category: 'dynamic',
           type: 'buff',
-          description: `静爻与日支相冲且处于${strength}状态，隐含动象，事象虽静实动，暗示潜在的变化与机遇`,
+          description: `此爻为静爻，日支相冲且处于${strength}，暗中有动象，事势可能突变`,
         }
       }
     }
@@ -462,18 +495,18 @@ export class LiuyaoTagsCalculator {
     }
 
     const descriptionMap: Record<string, string> = {
-      长生: '五行处于长生状态，具有朝气蓬勃的活力',
-      沐浴: '五行处于沐浴状态，主变化、主疾，吉凶各半',
-      冠带: '五行处于冠带状态，初具成就',
-      临官: '五行处于临官状态，权力与地位显赫',
-      帝旺: '五行处于帝旺状态，正当壮年，权势最大',
-      衰: '五行处于衰退状态，能力逐渐下降',
-      病: '五行处于患病状态，主困难与阻碍',
-      死: '五行处于死亡状态，事象终结',
-      墓: '五行处于墓库状态，不易彰显',
-      绝: '五行处于绝灭状态，事象陷入绝境',
-      胎: '五行处于胎孕状态，事象酝酿中',
-      养: '五行处于养护状态，蓄势待发',
+      长生: '此爻五行处于长生，气机生发，活力充足',
+      沐浴: '此爻五行处于沐浴，主变化与波动，吉凶参半',
+      冠带: '此爻五行处于冠带，初成其势，渐显其名',
+      临官: '此爻五行处于临官，气势上行，权位可见',
+      帝旺: '此爻五行处于帝旺，气势最盛，力量充足',
+      衰: '此爻五行处于衰，气势渐退，力量下降',
+      病: '此爻五行处于病，主阻滞与不顺',
+      死: '此爻五行处于死，事象趋于终止',
+      墓: '此爻五行处于墓，气势收藏，不易显露',
+      绝: '此爻五行处于绝，气势断绝，事难续',
+      胎: '此爻五行处于胎，事象酝酿未成',
+      养: '此爻五行处于养，蓄势待发',
     }
 
     return {
@@ -481,7 +514,7 @@ export class LiuyaoTagsCalculator {
       label: `${status}`,
       category: 'seasonal',
       type: typeMap[status] || 'neutral',
-      description: descriptionMap[status] || `${element}处于${status}状态`,
+      description: descriptionMap[status] || `此爻五行处于${status}状态`,
     }
   }
 
@@ -540,7 +573,7 @@ export class LiuyaoTagsCalculator {
           label: '进神受克',
           category: 'mutation',
           type: 'debuff',
-          description: '进神成立但受冲克、空亡或入墓影响',
+          description: '此爻化进成立，但受冲克、空亡或入墓影响，进势受阻',
         }
       }
 
@@ -549,7 +582,7 @@ export class LiuyaoTagsCalculator {
         label: '进神',
         category: 'mutation',
         type: 'buff',
-        description: '动爻进神，事象积极向前推进，吉象显著',
+        description: '此爻动化进神，气势前行，事势推进',
       }
     }
 
@@ -563,7 +596,7 @@ export class LiuyaoTagsCalculator {
         label: '退神不退',
         category: 'mutation',
         type: 'neutral',
-        description: '化退但得日月生扶或变爻临日月',
+        description: '此爻化退但得日月生扶或变爻临日月，退势被牵制',
       }
     }
 
@@ -572,7 +605,7 @@ export class LiuyaoTagsCalculator {
       label: '退神',
       category: 'mutation',
       type: 'debuff',
-      description: '化退',
+      description: '此爻动化退神，气势退缩，事势减弱',
     }
   }
 
@@ -584,7 +617,8 @@ export class LiuyaoTagsCalculator {
     yaos: Yao[],
     yaoIndex: number,
     dayBranch: Branch,
-    monthBranch: Branch
+    monthBranch: Branch,
+    indexMode: 'top' | 'bottom'
   ): TagInfo[] {
     const tags: TagInfo[] = []
 
@@ -594,6 +628,7 @@ export class LiuyaoTagsCalculator {
       const otherBranch = yaos[i].branch
       if (!otherBranch) continue
 
+      const otherLabel = this.getYaoLabelForYao(yaos[i], i, indexMode)
       // 六合
       if (SIX_HARMONY[yaoBranch] === otherBranch) {
         tags.push({
@@ -601,7 +636,7 @@ export class LiuyaoTagsCalculator {
           label: `六合`,
           category: 'interaction',
           type: 'buff',
-          description: `与第${i + 1}爻六合，两爻相合，事象和谐发展`,
+          description: `此爻与${otherLabel}六合，相合相生，事象趋于和合`,
         })
       }
       // 六冲
@@ -611,7 +646,7 @@ export class LiuyaoTagsCalculator {
           label: `六冲`,
           category: 'interaction',
           type: 'neutral',
-          description: `与第${i + 1}爻六冲，两爻相冲，事象易生变动`,
+          description: `此爻与${otherLabel}六冲，冲动多变，事象易起波澜`,
         })
       }
       // 三刑
@@ -621,7 +656,7 @@ export class LiuyaoTagsCalculator {
           label: `三刑`,
           category: 'interaction',
           type: 'debuff',
-          description: `与第${i + 1}爻三刑，两爻相刑，主刑罚、伤害与诉讼`,
+          description: `此爻与${otherLabel}三刑，相刑相伤，主阻滞与是非`,
         })
       }
       // 六害
@@ -631,27 +666,33 @@ export class LiuyaoTagsCalculator {
           label: `六害`,
           category: 'interaction',
           type: 'debuff',
-          description: `与第${i + 1}爻六害，两爻相害，主伤害、破坏与隐患`,
+          description: `此爻与${otherLabel}六害，暗损相害，易生隐患`,
         })
       }
     }
 
-    // 三合局：仅动爻参与，且需与日辰、月令凑齐三者
+    // 三合局：动爻参与，与日辰/月令或他爻凑齐三者
     const currentYao = yaos[yaoIndex]
     const harmonyGroup = TRIPLE_HARMONY[yaoBranch]
-    if (
-      currentYao?.isMoving &&
-      harmonyGroup &&
-      harmonyGroup.includes(dayBranch) &&
-      harmonyGroup.includes(monthBranch)
-    ) {
-      tags.push({
-        code: 'TRIPLE_HARMONY_FULL',
-        label: '三合局',
-        category: 'interaction',
-        type: 'buff',
-        description: '动爻与日辰、月令三者齐全成局',
-      })
+    if (currentYao?.isMoving && harmonyGroup) {
+      const helpers = new Set<Branch>()
+      if (harmonyGroup.includes(dayBranch)) helpers.add(dayBranch)
+      if (harmonyGroup.includes(monthBranch)) helpers.add(monthBranch)
+      for (let i = 0; i < yaos.length; i++) {
+        if (i === yaoIndex || !yaos[i].branch) continue
+        if (harmonyGroup.includes(yaos[i].branch!)) {
+          helpers.add(yaos[i].branch!)
+        }
+      }
+      if (helpers.size >= 2) {
+        tags.push({
+          code: 'TRIPLE_HARMONY_FULL',
+          label: '三合局',
+          category: 'interaction',
+          type: 'buff',
+          description: '此动爻与日辰/月令或他爻凑齐三合局，气势成局',
+        })
+      }
     }
 
     // 与日月的关系
@@ -661,7 +702,7 @@ export class LiuyaoTagsCalculator {
         label: `与日支合`,
         category: 'interaction',
         type: 'buff',
-        description: `爻位与日支相合，得到当日助力，事象顺遂`,
+        description: `此爻地支与日支相合，当日得助，事象顺遂`,
       })
     }
     if (SIX_CLASH[yaoBranch] === dayBranch) {
@@ -670,7 +711,7 @@ export class LiuyaoTagsCalculator {
         label: `与日支冲`,
         category: 'interaction',
         type: 'neutral',
-        description: `爻位与日支相冲，当日易生变数与动荡`,
+        description: `此爻地支与日支相冲，当日易生变数`,
       })
     }
 
@@ -680,7 +721,7 @@ export class LiuyaoTagsCalculator {
         label: `与月令合`,
         category: 'interaction',
         type: 'buff',
-        description: `爻位与月令相合，得到月令生扶，事象旺盛`,
+        description: `此爻地支与月令相合，得月令生扶，气势旺盛`,
       })
     }
 
@@ -707,7 +748,7 @@ export class LiuyaoTagsCalculator {
               label: '合处逢冲',
               category: 'interaction',
               type: 'debuff',
-              description: `本爻与他爻相合，但合爻被第三爻冲破，合不成反生乱`,
+              description: `此爻与他爻相合，但合爻又被第三爻冲破，合力受损`,
             })
           }
         }
@@ -727,7 +768,7 @@ export class LiuyaoTagsCalculator {
               label: '冲处逢合',
               category: 'interaction',
               type: 'buff',
-              description: `本爻与他爻相冲，但冲爻与第三爻相合，冲反成合`,
+              description: `此爻与他爻相冲，但被冲之爻又与第三爻相合，冲势受牵`,
             })
           }
         }
@@ -757,7 +798,7 @@ export class LiuyaoTagsCalculator {
         label: '入墓',
         category: 'seasonal',
         type: 'debuff',
-        description: `${element}入墓`,
+        description: '此爻入墓，气势收藏，难以发挥',
       })
     }
 
@@ -768,7 +809,7 @@ export class LiuyaoTagsCalculator {
         label: '化墓',
         category: 'mutation',
         type: 'debuff',
-        description: `动爻化入${element}的墓库，事象被埋没，前景晦暗`,
+        description: '此爻动化入墓，事象被收敛，进展受阻',
       })
     } else if (isMoving && branch === tomb) {
       tags.push({
@@ -776,7 +817,7 @@ export class LiuyaoTagsCalculator {
         label: '出墓',
         category: 'mutation',
         type: 'buff',
-        description: '动爻出墓',
+        description: '此爻动而出墓，气势释放，事象见转机',
       })
     }
 
@@ -795,7 +836,7 @@ export class LiuyaoTagsCalculator {
         label: '回头生',
         category: 'mutation',
         type: 'buff',
-        description: '变爻生本爻',
+        description: '变爻五行生本爻，回头生，助力回补',
       })
     } else if (OVERCOMES[variantElement] === yaoElement) {
       tags.push({
@@ -803,7 +844,7 @@ export class LiuyaoTagsCalculator {
         label: '回头克',
         category: 'mutation',
         type: 'debuff',
-        description: '变爻克本爻',
+        description: '变爻五行克本爻，回头克，反受牵制',
       })
     }
 
@@ -825,43 +866,45 @@ export class LiuyaoTagsCalculator {
    * 分析伏神相关
    */
   private static analyzeHiddenDeity(
-    branch: Branch,
+    yao: Yao,
     dayBranch: Branch,
-    monthBranch: Branch,
-    element: WuXing | undefined
+    monthBranch: Branch
   ): TagInfo[] {
     const tags: TagInfo[] = []
+    const fuBranch = yao.fuShen?.branch
+    if (!fuBranch) return tags
 
     // 伏神临日月
-    if (branch === dayBranch) {
+    if (fuBranch === dayBranch) {
       tags.push({
         code: 'HIDDEN_ON_DAY',
         label: '伏神临日',
         category: 'spiritual',
         type: 'buff',
-        description: '伏神临日支，隐藏的事象受当日激发，有机会浮现',
+        description: '此爻伏神临日支，隐事受日激发，易有显露',
       })
     }
-    if (branch === monthBranch) {
+    if (fuBranch === monthBranch) {
       tags.push({
         code: 'HIDDEN_ON_MONTH',
         label: '伏神临月',
         category: 'spiritual',
         type: 'buff',
-        description: '伏神临月支，隐藏的事象得月令扶持，力量增强',
+        description: '此爻伏神临月令，隐事得月扶持，力量增强',
       })
     }
 
     // 伏神有气
-    if (element) {
-      const strength = this.getSeasonStrength(element, monthBranch)
+    const fuElement = BRANCH_WUXING[fuBranch]
+    if (fuElement) {
+      const strength = this.getSeasonStrength(fuElement, monthBranch)
       if (['旺', '相'].includes(strength)) {
         tags.push({
           code: 'HIDDEN_HAS_QI',
           label: '伏神有气',
           category: 'spiritual',
           type: 'buff',
-          description: `伏神处于${strength}状态，具有振奋的气机，隐事可成`,
+          description: `此爻伏神得月令${strength}，有气可用，隐事可成`,
         })
       }
     }
@@ -898,7 +941,12 @@ export class LiuyaoTagsCalculator {
   /**
    * 分析动爻与静爻生克
    */
-  private static analyzeMovingStaticRelation(element: WuXing, yaos: Yao[], yaoIndex: number): TagInfo[] {
+  private static analyzeMovingStaticRelation(
+    element: WuXing,
+    yaos: Yao[],
+    yaoIndex: number,
+    indexMode: 'top' | 'bottom'
+  ): TagInfo[] {
     const tags: TagInfo[] = []
 
     for (let i = 0; i < yaos.length; i++) {
@@ -908,21 +956,22 @@ export class LiuyaoTagsCalculator {
 
       const relation = this.getRelationName(element, otherElement)
 
+      const otherLabel = this.getYaoLabelForYao(yaos[i], i, indexMode)
       if (relation === '生') {
         tags.push({
           code: `MOVING_GENERATE_STATIC_${i}`,
-          label: `动爻生${this.getYaoLabel(i)}`,
+          label: `动爻生${otherLabel}`,
           category: 'interaction',
           type: 'buff',
-          description: `动爻的五行生${this.getYaoLabel(i)}的五行，产生扶持与促进之力`,
+          description: `此动爻五行生${otherLabel}，对其有扶持促进之力`,
         })
       } else if (relation === '克') {
         tags.push({
           code: `MOVING_OVERCOME_STATIC_${i}`,
-          label: `动爻克${this.getYaoLabel(i)}`,
+          label: `动爻克${otherLabel}`,
           category: 'interaction',
           type: 'debuff',
-          description: `动爻的五行克${this.getYaoLabel(i)}的五行，产生制约与伤害之力`,
+          description: `此动爻五行克${otherLabel}，对其有制约压迫之力`,
         })
       }
     }
@@ -933,7 +982,9 @@ export class LiuyaoTagsCalculator {
   /**
    * 分析随鬼入墓
    */
-  private static analyzeGhostInTomb(element: WuXing, variantBranch: Branch): TagInfo | null {
+  private static analyzeGhostInTomb(yao: Yao, variantBranch: Branch, element: WuXing | undefined): TagInfo | null {
+    if (!element) return null
+    if (yao.relation !== '官星') return null
     const tombMap: Record<WuXing, Branch> = {
       wood: '辰',
       fire: '未',
@@ -948,7 +999,7 @@ export class LiuyaoTagsCalculator {
         label: '随鬼入墓',
         category: 'seasonal',
         type: 'debuff',
-        description: '旺爻化入墓',
+        description: '官鬼动化入墓，凶象收敛，事势受阻',
       }
     }
 
@@ -959,9 +1010,6 @@ export class LiuyaoTagsCalculator {
    * 分析反吟、伏吟
    */
   private static analyzeYinPattern(baseBranch: Branch, variantBranch: Branch): TagInfo | null {
-    const baseIdx = BRANCH_ORDER.indexOf(baseBranch)
-    const variantIdx = BRANCH_ORDER.indexOf(variantBranch)
-
     // 反吟：相冲
     if (SIX_CLASH[baseBranch] === variantBranch) {
       return {
@@ -969,7 +1017,7 @@ export class LiuyaoTagsCalculator {
         label: '反吟',
         category: 'mutation',
         type: 'debuff',
-        description: '本爻与变爻相冲',
+        description: '此爻与变爻相冲，为反吟，主反复不定',
       }
     }
 
@@ -980,7 +1028,7 @@ export class LiuyaoTagsCalculator {
         label: '伏吟',
         category: 'mutation',
         type: 'neutral',
-        description: '本爻与变爻相同',
+        description: '此爻与变爻同支，为伏吟，主停滞反复',
       }
     }
 
@@ -1013,7 +1061,7 @@ export class LiuyaoTagsCalculator {
             label: '太岁',
             category: 'spiritual',
             type: 'debuff',
-            description: `爻位与太岁重合，太岁主权威与制约，易遭冲克与阻碍`,
+            description: '太岁临爻，势大难犯，主权威与约束，宜谨慎而行',
           })
           break
         }
@@ -1026,7 +1074,7 @@ export class LiuyaoTagsCalculator {
       label: `月将：${date.monthBranch}`,
       category: 'spiritual',
       type: 'neutral',
-      description: `月建${date.monthBranch}为月将，代表本月的权威与指向，影响事象的吉凶判断临界`,
+      description: `月建${date.monthBranch}为月将，主本月气势与指向，影响吉凶判断`,
     }
     tags.push(monthTag)
 
@@ -1103,22 +1151,89 @@ export class LiuyaoTagsCalculator {
    */
   private static getShenShaDescription(shenShaKey: string): string {
     const descriptionMap: Record<string, string> = {
-      '桃花': '桃花临爻，主异性缘、风流、感情波澜，吉凶各半，需结合他因判断',
-      '驿马': '驿马临爻，主动象、旅行、迁移、变动，事象活跃易见转机',
-      '文昌贵人': '文昌贵人临爻，主聪慧、文学、功名、升迁，利于学业与事业',
-      '禄神': '禄神临爻，主俸禄、收入、财利、官禄，为吉利之象',
-      '天乙贵人': '天乙贵人临爻，主贵人扶助、逢凶化吉、官运亨通，尊贵吉利',
-      '将星': '将星临爻，主权势、勇武、领导力、能力突出，利于竞争与突破',
-      '华盖': '华盖临爻，主聪慧、艺术、出众，但易招嫉妒与孤独',
-      '天医': '天医临爻，主医药、健康、救助、痊愈，利于病情好转与健康',
-      '咸池': '咸池临爻，主淫乱、意外、风流、风险，需防范感情与道德问题',
-      '孤辰': '孤辰临爻，主孤独、离散、背离、无助，易招孤立与退缩',
-      '寡宿': '寡宿临爻，主寡妇、孤寡、阴气、冷局，不利于和谐与团结',
+      '桃花': '此爻逢桃花，主异性缘与感情波澜，吉凶各半，需兼看它象',
+      '驿马': '此爻逢驿马，主动象强，主奔波、迁移与变动',
+      '文昌贵人': '此爻逢文昌贵人，主聪慧名誉，利学业与事业',
+      '禄神': '此爻逢禄神，主俸禄财利与官禄之象',
+      '天乙贵人': '此爻逢天乙贵人，主贵人扶助，逢凶化吉',
+      '将星': '此爻逢将星，主权势与领导力，利竞争突破',
+      '华盖': '此爻逢华盖，主聪慧艺术，亦易清冷孤傲',
+      '天医': '此爻逢天医，主医药救助，利病情好转',
+      '咸池': '此爻逢咸池，主情欲与波动，需防情感风险',
+      '孤辰': '此爻逢孤辰，主孤独离散，易感背离',
+      '寡宿': '此爻逢寡宿，主孤寡冷局，不利和合',
     }
     return descriptionMap[shenShaKey] || '神煞'
   }
 
   // ========== 工具方法 ==========
+
+  private static resolveIndexMode(yaos: Array<Yao & { position?: number }>): 'top' | 'bottom' {
+    let topMatches = 0
+    let bottomMatches = 0
+
+    yaos.forEach((yao, i) => {
+      if (typeof yao.index !== 'number') return
+      const pos = typeof yao.position === 'number' ? yao.position : i + 1
+      if (yao.index === pos) topMatches += 1
+      if (yao.index + pos === 7) bottomMatches += 1
+    })
+
+    return bottomMatches > topMatches ? 'bottom' : 'top'
+  }
+
+  private static getTopPosition(
+    yao: Yao & { position?: number },
+    fallbackIndex: number,
+    indexMode: 'top' | 'bottom'
+  ): number {
+    const raw = typeof yao.index === 'number'
+      ? yao.index
+      : (typeof yao.position === 'number' ? yao.position : fallbackIndex + 1)
+    return indexMode === 'top' ? raw : 7 - raw
+  }
+
+  private static getTopIndex(
+    yao: Yao & { position?: number },
+    fallbackIndex: number,
+    indexMode: 'top' | 'bottom'
+  ): number {
+    const pos = this.getTopPosition(yao, fallbackIndex, indexMode)
+    return Math.max(0, Math.min(5, pos - 1))
+  }
+
+  private static getYaoLabelByTopIndex(index: number): string {
+    const labels = ['上爻', '五爻', '四爻', '三爻', '二爻', '初爻']
+    return labels[index] || `第${index + 1}爻`
+  }
+
+  private static getYaoLabelForYao(
+    yao: Yao & { position?: number },
+    fallbackIndex: number,
+    indexMode: 'top' | 'bottom'
+  ): string {
+    const topIndex = this.getTopIndex(yao, fallbackIndex, indexMode)
+    return this.getYaoLabelByTopIndex(topIndex)
+  }
+
+  private static getArrayIndexByTopIndex(
+    yaos: Array<Yao & { position?: number }>,
+    topIndex: number,
+    indexMode: 'top' | 'bottom'
+  ): number | undefined {
+    for (let i = 0; i < yaos.length; i++) {
+      if (this.getTopIndex(yaos[i], i, indexMode) === topIndex) {
+        return i
+      }
+    }
+    return undefined
+  }
+
+  private static normalizeIndex(index: number | undefined, length: number): number | undefined {
+    if (typeof index !== 'number' || Number.isNaN(index)) return undefined
+    if (index < 0 || index >= length) return undefined
+    return index
+  }
 
   private static toWuXing(element?: Yao['fiveElement']): WuXing | undefined {
     if (!element) return undefined
@@ -1167,9 +1282,16 @@ export class LiuyaoTagsCalculator {
     return '无'
   }
 
-  private static getYaoLabel(index: number): string {
-    const labels = ['上爻', '五爻', '四爻', '三爻', '二爻', '初爻']
-    return labels[index] || `第${index}爻`
+  private static getSixGodElement(god: SixGod): WuXing | undefined {
+    const map: Record<SixGod, WuXing> = {
+      青龙: 'wood',
+      朱雀: 'fire',
+      勾陈: 'earth',
+      腾蛇: 'fire',
+      白虎: 'metal',
+      玄武: 'water',
+    }
+    return map[god]
   }
 }
 
