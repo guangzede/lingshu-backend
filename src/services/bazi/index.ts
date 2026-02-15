@@ -471,7 +471,7 @@ export function computeBaziChart(input: BaziComputeInput): BaziComputeResult {
     { label: '时柱', pillar: pillars.hour }
   ])
 
-  const shenSha = computeBaziShenSha(dayStem, dayBranch, pillars.month.branch, pillars.year.branch)
+  const shenSha = computeBaziShenSha(pillars)
   const xunKong = computeXunKong(dayStem, dayBranch)
 
   const birthYear = birth?.date ? Number(birth.date.slice(0, 4)) : undefined
