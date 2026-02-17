@@ -182,15 +182,20 @@ caseRouter.delete('/:id', async (c) => {
   }
 
   try {
-    const result = await db
+    const existing = await db
+      .select({ id: cases.id })
+      .from(cases)
+      .where(and(eq(cases.userId, payload.id), eq(cases.id, caseId)))
+      .get();
+
+    if (!existing) {
+      return c.json(errorResponse('卦例不存在或已删除'), 404);
+    }
+
+    await db
       .delete(cases)
       .where(and(eq(cases.userId, payload.id), eq(cases.id, caseId)))
       .run();
-
-    const changes = (result as { changes?: number } | undefined)?.changes ?? 0;
-    if (changes <= 0) {
-      return c.json(errorResponse('卦例不存在或已删除'), 404);
-    }
 
     return c.json(successResponse({ success: true }, '删除成功'));
   } catch (error: any) {

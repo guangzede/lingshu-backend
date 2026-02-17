@@ -47,3 +47,34 @@ export interface StockPredictionResult {
   signals: string[]
   samples: number
 }
+
+export interface StockBoardItem {
+  code: string
+  name: string
+  price: number
+  change: number
+  changePct: number
+  turnoverRate?: number
+}
+
+export interface MarketIndexSnapshot {
+  code: string
+  name: string
+  current: number
+  change: number
+  changePct: number
+}
+
+export interface MarketBreadth {
+  up: number
+  down: number
+  flat: number
+}
+
+export interface StockMarketOverview {
+  indices: MarketIndexSnapshot[]
+  breadth: MarketBreadth
+  gainers: StockBoardItem[]
+  losers: StockBoardItem[]
+  updatedAt: string
+}

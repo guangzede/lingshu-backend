@@ -3,6 +3,7 @@ import { Lunar } from 'lunar-javascript'
 import { errorResponse, successResponse } from '@/utils/response'
 import {
   crawlStockKline,
+  crawlMarketOverview,
   crawlStockQuote,
   crawlStockSuggestions,
   predictStockProbability,
@@ -72,6 +73,18 @@ stockRouter.get('/suggest', async (c) => {
   } catch (err: any) {
     console.error('[STOCK SUGGEST ERROR]', err)
     return c.json(errorResponse('股票搜索失败，请稍后重试'), 502)
+  }
+})
+
+stockRouter.get('/market-overview', async (c) => {
+  const limitQuery = Number(c.req.query('limit') || 8)
+  const limit = Number.isFinite(limitQuery) ? limitQuery : 8
+  try {
+    const overview = await crawlMarketOverview(limit)
+    return c.json(successResponse({ overview }))
+  } catch (err: any) {
+    console.error('[STOCK MARKET OVERVIEW ERROR]', err)
+    return c.json(errorResponse('当日大盘抓取失败，请稍后重试'), 502)
   }
 })
 

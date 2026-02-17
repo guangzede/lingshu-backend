@@ -1,9 +1,26 @@
-import type { StockKlinePoint, StockQuote, StockSuggestion } from './types'
+import type {
+  MarketBreadth,
+  MarketIndexSnapshot,
+  StockBoardItem,
+  StockKlinePoint,
+  StockMarketOverview,
+  StockQuote,
+  StockSuggestion
+} from './types'
 
 const EAST_MONEY_TOKEN = 'D43BF722C8E33BDC906FB84D85E326E8'
 const STOCK_SEARCH_URL = 'https://searchapi.eastmoney.com/api/suggest/get'
 const KLINE_URL = 'https://web.ifzq.gtimg.cn/appstock/app/fqkline/get'
 const SINA_QUOTE_URL = 'https://hq.sinajs.cn/list='
+const EAST_MONEY_CLIST_URL = 'https://push2.eastmoney.com/api/qt/clist/get'
+const EAST_MONEY_STOCK_URL = 'https://push2.eastmoney.com/api/qt/stock/get'
+const A_SHARE_FS = 'm:0+t:6,m:0+t:13,m:0+t:80,m:1+t:2,m:1+t:23'
+
+const INDEX_CONFIGS: Array<{ secid: string; code: string; name: string; withBreadth?: boolean }> = [
+  { secid: '1.000001', code: 'SH000001', name: '上证指数', withBreadth: true },
+  { secid: '0.399001', code: 'SZ399001', name: '深证成指' },
+  { secid: '0.399006', code: 'SZ399006', name: '创业板指' }
+]
 
 const SEARCH_HEADERS = {
   Referer: 'https://quote.eastmoney.com/',
@@ -39,6 +56,21 @@ function normalizeSymbol(codeOrSymbol: string): string {
 function asNumber(value: any): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
+}
+
+function normalizePrice(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.abs(n) >= 10000 ? n / 100 : n
+}
+
+function normalizePct(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.abs(n) > 40 ? n / 100 : n
+}
+
+function normalizeChange(n: number): number {
+  if (!Number.isFinite(n)) return 0
+  return Math.abs(n) >= 1000 ? n / 100 : n
 }
 
 function parseKLineArray(raw: any[]): StockKlinePoint | null {
@@ -201,4 +233,92 @@ export async function crawlStockQuote(symbolOrCode: string): Promise<StockQuote 
   if (!res.ok) return null
   const text = await res.text()
   return parseSinaQuote(text, symbol)
+}
+
+function normalizeBoardItem(raw: any): StockBoardItem | null {
+  const code = String(raw?.f12 ?? '').trim()
+  const name = String(raw?.f14 ?? '').trim()
+  if (!code || !name) return null
+  return {
+    code,
+    name,
+    price: asNumber(raw?.f2),
+    change: asNumber(raw?.f4),
+    changePct: asNumber(raw?.f3),
+    turnoverRate: asNumber(raw?.f8)
+  }
+}
+
+export async function crawlStockBoard(type: 'gainers' | 'losers', limit = 8): Promise<StockBoardItem[]> {
+  const safeLimit = Math.max(3, Math.min(limit, 20))
+  const po = type === 'gainers' ? 1 : 0
+  const fields = 'f12,f14,f2,f3,f4,f8,f15,f16'
+  const url =
+    `${EAST_MONEY_CLIST_URL}?pn=1&pz=${safeLimit}&po=${po}&np=1&fltt=2&invt=2` +
+    `&fid=f3&fs=${encodeURIComponent(A_SHARE_FS)}&fields=${fields}`
+
+  const res = await fetch(url, { headers: SEARCH_HEADERS })
+  if (!res.ok) {
+    throw new Error(`涨跌榜抓取失败(${res.status})`)
+  }
+  const json = await res.json() as any
+  const list = json?.data?.diff
+  if (!Array.isArray(list)) return []
+  return list
+    .map(normalizeBoardItem)
+    .filter((item): item is StockBoardItem => Boolean(item))
+}
+
+interface IndexFetchResult {
+  index: MarketIndexSnapshot
+  breadth?: MarketBreadth
+}
+
+async function crawlOneIndex(config: { secid: string; code: string; name: string; withBreadth?: boolean }): Promise<IndexFetchResult> {
+  const fields = 'f43,f169,f170,f104,f105,f106'
+  const url = `${EAST_MONEY_STOCK_URL}?secid=${config.secid}&fields=${fields}&invt=2&fltt=2`
+  const res = await fetch(url, { headers: SEARCH_HEADERS })
+  if (!res.ok) {
+    throw new Error(`指数抓取失败(${res.status})`)
+  }
+  const json = await res.json() as any
+  const data = json?.data || {}
+
+  const index: MarketIndexSnapshot = {
+    code: config.code,
+    name: config.name,
+    current: normalizePrice(asNumber(data?.f43)),
+    change: normalizeChange(asNumber(data?.f169)),
+    changePct: normalizePct(asNumber(data?.f170))
+  }
+
+  if (!config.withBreadth) {
+    return { index }
+  }
+
+  const breadth: MarketBreadth = {
+    up: Math.max(0, Math.round(asNumber(data?.f104))),
+    down: Math.max(0, Math.round(asNumber(data?.f105))),
+    flat: Math.max(0, Math.round(asNumber(data?.f106)))
+  }
+  return { index, breadth }
+}
+
+export async function crawlMarketOverview(limit = 8): Promise<StockMarketOverview> {
+  const safeLimit = Math.max(3, Math.min(limit, 20))
+  const [gainers, losers, indexResults] = await Promise.all([
+    crawlStockBoard('gainers', safeLimit),
+    crawlStockBoard('losers', safeLimit),
+    Promise.all(INDEX_CONFIGS.map((config) => crawlOneIndex(config)))
+  ])
+
+  const breadth = indexResults.find((item) => item.breadth)?.breadth || { up: 0, down: 0, flat: 0 }
+
+  return {
+    indices: indexResults.map((item) => item.index),
+    breadth,
+    gainers,
+    losers,
+    updatedAt: new Date().toISOString()
+  }
 }
