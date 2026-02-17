@@ -11,6 +11,9 @@ import { aiRouter } from './ai'
 import { caseRouter } from './cases'
 import { baziRouter } from './bazi'
 import { baziCaseRouter } from './bazi/cases'
+import { daliurenRouter } from './daliuren'
+import { daliurenCaseRouter } from './daliuren/cases'
+import { stockRouter } from './stock'
 import { datetime } from 'drizzle-orm/mysql-core'
 
 // 定义环境类型
@@ -34,7 +37,14 @@ app.get('/api/health', (c) => {
 // 2. JWT 中间件 (为 /api/* 路由保护)
 app.use('/api/*', (c, next) => {
   const path = c.req.path
-  if (path.startsWith('/api/auth') || path === '/api/health' || path === '/api/divination/compute' || path === '/api/bazi/compute') {
+  if (
+    path.startsWith('/api/auth')
+    || path === '/api/health'
+    || path === '/api/divination/compute'
+    || path === '/api/bazi/compute'
+    || path === '/api/daliuren/compute'
+    || path.startsWith('/api/stock')
+  ) {
     return next()
   }
   const secret = c.env.JWT_SECRET || 'dev_secret_key_123'
@@ -57,6 +67,10 @@ app.route('/api/cases', caseRouter)
 // 八字排盘
 app.route('/api/bazi', baziRouter)
 app.route('/api/bazi/cases', baziCaseRouter)
+// 大六壬排盘
+app.route('/api/daliuren', daliurenRouter)
+app.route('/api/daliuren/cases', daliurenCaseRouter)
+app.route('/api/stock', stockRouter)
 
 // AI 流式聊天接口
 app.route('/api/ai', aiRouter)
