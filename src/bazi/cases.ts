@@ -166,15 +166,20 @@ baziCaseRouter.delete('/:id', async (c) => {
   }
 
   try {
-    const result = await db
+    const existing = await db
+      .select({ id: baziCases.id })
+      .from(baziCases)
+      .where(and(eq(baziCases.userId, payload.id), eq(baziCases.id, caseId)))
+      .get()
+
+    if (!existing) {
+      return c.json(errorResponse('案例不存在或已删除'), 404)
+    }
+
+    await db
       .delete(baziCases)
       .where(and(eq(baziCases.userId, payload.id), eq(baziCases.id, caseId)))
       .run()
-
-    const changes = (result as { changes?: number } | undefined)?.changes ?? 0
-    if (changes <= 0) {
-      return c.json(errorResponse('案例不存在或已删除'), 404)
-    }
 
     return c.json(successResponse({ success: true }, '删除成功'))
   } catch (error: any) {

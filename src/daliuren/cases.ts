@@ -167,15 +167,20 @@ daliurenCaseRouter.delete('/:id', async (c) => {
   }
 
   try {
-    const result = await db
+    const existing = await db
+      .select({ id: daliurenCases.id })
+      .from(daliurenCases)
+      .where(and(eq(daliurenCases.userId, payload.id), eq(daliurenCases.id, caseId)))
+      .get()
+
+    if (!existing) {
+      return c.json(errorResponse('案例不存在或已删除'), 404)
+    }
+
+    await db
       .delete(daliurenCases)
       .where(and(eq(daliurenCases.userId, payload.id), eq(daliurenCases.id, caseId)))
       .run()
-
-    const changes = (result as { changes?: number } | undefined)?.changes ?? 0
-    if (changes <= 0) {
-      return c.json(errorResponse('案例不存在或已删除'), 404)
-    }
 
     return c.json(successResponse({ success: true }, '删除成功'))
   } catch (error: any) {
