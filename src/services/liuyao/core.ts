@@ -64,6 +64,16 @@ function toBottomIndex(topIndex: number): number {
   return 5 - topIndex
 }
 
+function resolveTopIndexByYao(yao: Yao, fallbackTopIndex: number): number {
+  const raw = Number(yao?.index)
+  if (Number.isInteger(raw)) {
+    // 兼容 0~5 与 1~6 两种存储形式（均按上->下）
+    if (raw >= 0 && raw <= 5) return raw
+    if (raw >= 1 && raw <= 6) return raw - 1
+  }
+  return fallbackTopIndex
+}
+
 function applyPalace(hex: Hexagram) {
   const code = codeFromYaos(hex.yaos)
   const meta = findPalaceByCode(code)
@@ -225,9 +235,10 @@ export function assignSixGods(date: Date, rule: SchoolRuleSet, yaos: [Yao, Yao, 
   // 六神按“自下而上”顺序循环：
   // - 初爻（底）用起始六神
   // - 二爻到上爻依次顺推
-  // 当前 yaos 为“上->下”数组，所以先换算 bottomIndex。
-  const result: SixGod[] = yaos.map((_, i) => {
-    const bottomIndex = toBottomIndex(i)
+  // 当前 yaos 为“上->下”数组，优先使用 yao.index 兜底兼容历史数据。
+  const result: SixGod[] = yaos.map((yao, i) => {
+    const topIndex = resolveTopIndexByYao(yao, i)
+    const bottomIndex = toBottomIndex(topIndex)
     return seq[(startIndex + bottomIndex) % seq.length]
   })
   result.forEach((sg, i) => { yaos[i].sixGod = sg })
