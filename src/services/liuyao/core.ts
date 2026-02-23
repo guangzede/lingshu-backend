@@ -220,12 +220,15 @@ export function assignSixGods(date: Date, rule: SchoolRuleSet, yaos: [Yao, Yao, 
     : (base.startByBranch?.[branch] || SIX_GODS[0])
 
   const seq = base.sequence
-  const startIndex = seq.indexOf(start)
+  const startIndex = Math.max(0, seq.indexOf(start))
 
-  // 六神按自下而上顺序循环，数组为上->下时需映射索引
+  // 六神按“自下而上”顺序循环：
+  // - 初爻（底）用起始六神
+  // - 二爻到上爻依次顺推
+  // 当前 yaos 为“上->下”数组，所以先换算 bottomIndex。
   const result: SixGod[] = yaos.map((_, i) => {
     const bottomIndex = toBottomIndex(i)
-    return seq[(startIndex - bottomIndex + seq.length * 100) % seq.length]
+    return seq[(startIndex + bottomIndex) % seq.length]
   })
   result.forEach((sg, i) => { yaos[i].sixGod = sg })
 

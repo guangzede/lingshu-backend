@@ -12,6 +12,9 @@ import { and, desc, eq } from 'drizzle-orm';
 import { cases } from '../schema';
 import { errorResponse, successResponse } from '../utils/response';
 import type { JwtPayload } from '../utils/types';
+import { RULE_SETS } from '@/constants/liuyaoRules';
+import { assignSixGods } from '@/services/liuyao/core';
+import type { Yao } from '@/types/liuyao';
 
 interface CloudflareBindings {
   lingshu_db: D1Database;
@@ -19,6 +22,53 @@ interface CloudflareBindings {
 }
 
 export const caseRouter = new Hono<{ Bindings: CloudflareBindings }>();
+
+function normalizeLegacySixGods(
+  result: any,
+  ruleSetKey: string,
+  dateValue: string,
+  timeValue: string
+) {
+  if (!result || !Array.isArray(result.yaos) || result.yaos.length !== 6) {
+    return result;
+  }
+  if (!result.hex || !result.variant) return result;
+
+  const rule = RULE_SETS[ruleSetKey] || RULE_SETS['jingfang-basic'];
+  if (!rule) return result;
+
+  const dateText = `${dateValue}T${timeValue || '00:00'}:00`;
+  const date = new Date(dateText);
+  const safeDate = Number.isNaN(date.getTime()) ? new Date() : date;
+
+  const normalizedYaos = result.yaos.map((yao: any, index: number) => ({
+    ...yao,
+    index: (index + 1) as Yao['index'],
+  })) as [Yao, Yao, Yao, Yao, Yao, Yao];
+
+  assignSixGods(safeDate, rule, normalizedYaos);
+
+  const normalizedResult = {
+    ...result,
+    yaos: normalizedYaos,
+  };
+
+  const rows = result?.hexagramTable?.rows;
+  if (Array.isArray(rows) && rows.length === 6) {
+    normalizedResult.hexagramTable = {
+      ...result.hexagramTable,
+      rows: rows.map((row: any, index: number) => ({
+        ...row,
+        left: {
+          ...(row?.left || {}),
+          sixGod: normalizedYaos[index]?.sixGod || row?.left?.sixGod || '--',
+        },
+      })),
+    };
+  }
+
+  return normalizedResult;
+}
 
 caseRouter.post('/', async (c) => {
   const db = drizzle(c.env.lingshu_db);
@@ -142,7 +192,8 @@ caseRouter.get('/:id', async (c) => {
     }
 
     const lines = JSON.parse(row.lines || '[]');
-    const result = row.result ? JSON.parse(row.result) : null;
+    const rawResult = row.result ? JSON.parse(row.result) : null;
+    const result = normalizeLegacySixGods(rawResult, row.ruleSetKey, row.dateValue, row.timeValue);
 
     return c.json(
       successResponse({

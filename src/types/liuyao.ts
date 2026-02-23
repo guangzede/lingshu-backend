@@ -24,13 +24,13 @@ export interface Yao {
 
 export interface Trigram {
   name: TrigramName
-  yaos: [Yao, Yao, Yao] // 自下而上的三爻
+  yaos: [Yao, Yao, Yao] // 三爻（上->下）
 }
 
 export interface Hexagram {
   upper: Trigram // 上卦（三爻）
   lower: Trigram // 下卦（三爻）
-  yaos: [Yao, Yao, Yao, Yao, Yao, Yao] // 六爻（自下到上）
+  yaos: [Yao, Yao, Yao, Yao, Yao, Yao] // 六爻（上->下）
   name?: string // 卦名（可选）
   palace?: string // 卦宫（八宫）
   palaceCategory?: string // 本宫/一世/游魂/归魂
